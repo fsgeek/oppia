@@ -14,8 +14,6 @@
 
 /**
  * @fileoverview Unit tests for Interactive Map rules.
- *
- * @author wxyxinyu@gmail.com (Xinyu Wu)
  */
 
 describe('Numeric Input service', function() {
@@ -166,24 +164,5 @@ describe('Numeric Input service', function() {
       p: [27, -123],
       d: 6220
     })).toBe(true);
-  });
-
-  it('should have a correct fuzzy rule', function() {
-    expect(imrs.FuzzyMatches([0, 0], {
-      training_data: [
-        [50, 100],
-        [55, 96],
-        [3, 5],
-        [0, 0.01]
-      ]
-    })).toBe(true);
-    expect(imrs.FuzzyMatches([0, 0], {
-      training_data: [
-        [50, 100],
-        [55, 96],
-        [21, 21],
-        [5, 5]
-      ]
-    })).toBe(false);
   });
 });

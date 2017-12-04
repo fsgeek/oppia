@@ -44,6 +44,8 @@ DIRS_TO_ADD_TO_SYS_PATH = [
     os.path.join(
         OPPIA_TOOLS_DIR, 'google_appengine_1.9.19', 'google_appengine',
         'lib', 'webob_0_9'),
+    os.path.join(OPPIA_TOOLS_DIR, 'browsermob-proxy-0.7.1'),
+    os.path.join(OPPIA_TOOLS_DIR, 'selenium-2.53.2'),
     CURR_DIR,
     os.path.join(THIRD_PARTY_DIR, 'bleach-1.2.2'),
     os.path.join(THIRD_PARTY_DIR, 'gae-cloud-storage-1.9.15.0'),
@@ -51,6 +53,7 @@ DIRS_TO_ADD_TO_SYS_PATH = [
     os.path.join(THIRD_PARTY_DIR, 'gae-pipeline-1.9.17.0'),
     os.path.join(THIRD_PARTY_DIR, 'graphy-1.0.0'),
     os.path.join(THIRD_PARTY_DIR, 'html5lib-python-0.95'),
+    os.path.join(THIRD_PARTY_DIR, 'requests-2.10.0'),
     os.path.join(THIRD_PARTY_DIR, 'simplejson-3.7.1'),
 ]
 

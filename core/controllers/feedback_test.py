@@ -30,7 +30,7 @@ EXPECTED_THREAD_KEYS = [
     'thread_id', 'subject', 'last_updated']
 EXPECTED_MESSAGE_KEYS = [
     'author_username', 'created_on', 'exploration_id', 'message_id',
-    'text', 'updated_status', 'updated_subject']
+    'text', 'updated_status', 'updated_subject', 'received_via_email']
 
 
 class FeedbackThreadPermissionsTests(test_utils.GenericTestBase):
@@ -246,7 +246,7 @@ class FeedbackThreadIntegrationTests(test_utils.GenericTestBase):
     def test_no_username_shown_for_logged_out_learners(self):
         new_exp_id = 'new_eid'
         exploration = exp_domain.Exploration.create_default_exploration(
-            new_exp_id, 'A title', 'A category')
+            new_exp_id, title='A title', category='A category')
         exp_services.save_new_exploration(self.editor_id, exploration)
         rights_manager.publish_exploration(self.editor_id, new_exp_id)
 

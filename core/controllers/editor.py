@@ -16,11 +16,13 @@
 
 """Controllers for the editor view."""
 
+import datetime
 import imghdr
 import logging
 
 import jinja2
 
+from constants import constants
 from core.controllers import base
 from core.domain import config_domain
 from core.domain import dependency_registry
@@ -31,17 +33,19 @@ from core.domain import exp_services
 from core.domain import fs_domain
 from core.domain import gadget_registry
 from core.domain import interaction_registry
+from core.domain import obj_services
 from core.domain import rights_manager
 from core.domain import rte_component_registry
-from core.domain import rule_domain
 from core.domain import stats_services
 from core.domain import user_services
 from core.domain import value_generators_domain
+from core.domain import visualization_registry
 from core.platform import models
 import feconf
 import utils
 
 current_user_services = models.Registry.import_current_user_services()
+(user_models,) = models.Registry.import_models([models.NAMES.user])
 
 # The frontend template for a new state. It is sent to the frontend when the
 # exploration editor page is first loaded, so that new states can be
@@ -50,23 +54,23 @@ current_user_services = models.Registry.import_current_user_services()
 # state name and the destination of the default rule should first be
 # changed to the desired new state name.
 NEW_STATE_TEMPLATE = {
+    'classifier_model_id': None,
     'content': [{
         'type': 'text',
         'value': ''
     }],
     'interaction': exp_domain.State.NULL_INTERACTION_DICT,
     'param_changes': [],
-    'unresolved_answers': {},
 }
 
-MODERATOR_REQUEST_FORUM_URL_DEFAULT_VALUE = (
-    'https://moderator/request/forum/url')
-MODERATOR_REQUEST_FORUM_URL = config_domain.ConfigProperty(
-    'moderator_request_forum_url', {'type': 'unicode'},
-    'A link to the forum for nominating explorations to be featured '
-    'in the gallery',
-    default_value=MODERATOR_REQUEST_FORUM_URL_DEFAULT_VALUE)
-
+DEFAULT_TWITTER_SHARE_MESSAGE_EDITOR = config_domain.ConfigProperty(
+    'default_twitter_share_message_editor', {
+        'type': 'unicode',
+    },
+    'Default text for the Twitter share message for the editor',
+    default_value=(
+        'Check out this interactive lesson I created on Oppia - a free '
+        'platform for teaching and learning!'))
 
 def get_value_generators_js():
     """Return a string that concatenates the JS for all value generators."""
@@ -92,7 +96,7 @@ def _require_valid_version(version_from_payload, exploration_version):
 
 
 def require_editor(handler):
-    """Decorator that checks if the user can edit the given entity."""
+    """Decorator that checks if the user can edit the given exploration."""
     def test_editor(self, exploration_id, escaped_state_name=None, **kwargs):
         """Gets the user and exploration id if the user can edit it.
 
@@ -126,7 +130,7 @@ def require_editor(handler):
             raise self.PageNotFoundException
 
         if not rights_manager.Actor(self.user_id).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration_id):
+                feconf.ACTIVITY_TYPE_EXPLORATION, exploration_id):
             raise self.UnauthorizedUserException(
                 'You do not have the credentials to edit this exploration.',
                 self.user_id)
@@ -134,7 +138,7 @@ def require_editor(handler):
         if not escaped_state_name:
             return handler(self, exploration_id, **kwargs)
 
-        state_name = self.unescape_state_name(escaped_state_name)
+        state_name = utils.unescape_encoded_uri_component(escaped_state_name)
         if state_name not in exploration.states:
             logging.error('Could not find state: %s' % state_name)
             logging.error('Available states: %s' % exploration.states.keys())
@@ -147,9 +151,7 @@ def require_editor(handler):
 
 class EditorHandler(base.BaseHandler):
     """Base class for all handlers for the editor page."""
-
-    # The page name to use as a key for generating CSRF tokens.
-    PAGE_NAME_FOR_CSRF = 'editor'
+    pass
 
 
 class ExplorationPage(EditorHandler):
@@ -159,16 +161,17 @@ class ExplorationPage(EditorHandler):
 
     def get(self, exploration_id):
         """Handles GET requests."""
-        if exploration_id in base.DISABLED_EXPLORATIONS.value:
+        if exploration_id in constants.DISABLED_EXPLORATION_IDS:
             self.render_template(
-                'error/disabled_exploration.html', iframe_restriction=None)
+                'pages/error/disabled_exploration.html',
+                iframe_restriction=None)
             return
 
         exploration = exp_services.get_exploration_by_id(
             exploration_id, strict=False)
         if (exploration is None or
                 not rights_manager.Actor(self.user_id).can_view(
-                    rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration_id)):
+                    feconf.ACTIVITY_TYPE_EXPLORATION, exploration_id)):
             self.redirect('/')
             return
 
@@ -176,7 +179,9 @@ class ExplorationPage(EditorHandler):
             bool(self.user_id) and
             self.username not in config_domain.BANNED_USERNAMES.value and
             rights_manager.Actor(self.user_id).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration_id))
+                feconf.ACTIVITY_TYPE_EXPLORATION, exploration_id))
+
+        visualizations_html = visualization_registry.Registry.get_full_html()
 
         interaction_ids = (
             interaction_registry.Registry.get_all_interaction_ids())
@@ -192,9 +197,6 @@ class ExplorationPage(EditorHandler):
             rte_component_registry.Registry.get_html_for_all_components() +
             interaction_registry.Registry.get_interaction_html(
                 interaction_ids))
-        interaction_validators_html = (
-            interaction_registry.Registry.get_validators_html(
-                interaction_ids))
 
         gadget_types = gadget_registry.Registry.get_all_gadget_types()
         gadget_templates = (
@@ -204,46 +206,46 @@ class ExplorationPage(EditorHandler):
             'GADGET_SPECS': gadget_registry.Registry.get_all_specs(),
             'INTERACTION_SPECS': interaction_registry.Registry.get_all_specs(),
             'PANEL_SPECS': feconf.PANELS_PROPERTIES,
+            'DEFAULT_OBJECT_VALUES': obj_services.get_default_object_values(),
+            'DEFAULT_TWITTER_SHARE_MESSAGE_EDITOR': (
+                DEFAULT_TWITTER_SHARE_MESSAGE_EDITOR.value),
             'additional_angular_modules': additional_angular_modules,
             'can_delete': rights_manager.Actor(
                 self.user_id).can_delete(
-                    rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration_id),
+                    feconf.ACTIVITY_TYPE_EXPLORATION, exploration_id),
             'can_edit': can_edit,
             'can_modify_roles': rights_manager.Actor(
                 self.user_id).can_modify_roles(
-                    rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration_id),
+                    feconf.ACTIVITY_TYPE_EXPLORATION, exploration_id),
             'can_publicize': rights_manager.Actor(
                 self.user_id).can_publicize(
-                    rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration_id),
+                    feconf.ACTIVITY_TYPE_EXPLORATION, exploration_id),
             'can_publish': rights_manager.Actor(
                 self.user_id).can_publish(
-                    rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration_id),
+                    feconf.ACTIVITY_TYPE_EXPLORATION, exploration_id),
             'can_release_ownership': rights_manager.Actor(
                 self.user_id).can_release_ownership(
-                    rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration_id),
+                    feconf.ACTIVITY_TYPE_EXPLORATION, exploration_id),
             'can_unpublicize': rights_manager.Actor(
                 self.user_id).can_unpublicize(
-                    rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration_id),
+                    feconf.ACTIVITY_TYPE_EXPLORATION, exploration_id),
             'can_unpublish': rights_manager.Actor(
                 self.user_id).can_unpublish(
-                    rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration_id),
+                    feconf.ACTIVITY_TYPE_EXPLORATION, exploration_id),
             'dependencies_html': jinja2.utils.Markup(dependencies_html),
             'gadget_templates': jinja2.utils.Markup(gadget_templates),
             'interaction_templates': jinja2.utils.Markup(
                 interaction_templates),
-            'interaction_validators_html': jinja2.utils.Markup(
-                interaction_validators_html),
-            'moderator_request_forum_url': MODERATOR_REQUEST_FORUM_URL.value,
+            'meta_description': feconf.CREATE_PAGE_DESCRIPTION,
             'nav_mode': feconf.NAV_MODE_CREATE,
             'value_generators_js': jinja2.utils.Markup(
                 get_value_generators_js()),
             'title': exploration.title,
+            'visualizations_html': jinja2.utils.Markup(visualizations_html),
             'ALL_LANGUAGE_CODES': feconf.ALL_LANGUAGE_CODES,
             'ALLOWED_GADGETS': feconf.ALLOWED_GADGETS,
             'ALLOWED_INTERACTION_CATEGORIES': (
                 feconf.ALLOWED_INTERACTION_CATEGORIES),
-            # This is needed for the exploration preview.
-            'CATEGORIES_TO_COLORS': feconf.CATEGORIES_TO_COLORS,
             'INVALID_PARAMETER_NAMES': feconf.INVALID_PARAMETER_NAMES,
             'NEW_STATE_TEMPLATE': NEW_STATE_TEMPLATE,
             'SHOW_TRAINABLE_UNRESOLVED_ANSWERS': (
@@ -251,30 +253,44 @@ class ExplorationPage(EditorHandler):
             'TAG_REGEX': feconf.TAG_REGEX,
         })
 
-        self.render_template('editor/exploration_editor.html')
+        self.render_template(
+            'pages/exploration_editor/exploration_editor.html')
 
 
 class ExplorationHandler(EditorHandler):
     """Page with editor data for a single exploration."""
 
-    PAGE_NAME_FOR_CSRF = 'editor'
+    GET_HANDLER_ERROR_RETURN_TYPE = feconf.HANDLER_TYPE_JSON
 
-    def _get_exploration_data(self, exploration_id, version=None):
+    def _get_exploration_data(
+            self, exploration_id, apply_draft=False, version=None):
         """Returns a description of the given exploration."""
         try:
-            exploration = exp_services.get_exploration_by_id(
-                exploration_id, version=version)
+            if apply_draft:
+                exploration = exp_services.get_exp_with_draft_applied(
+                    exploration_id, self.user_id)
+            else:
+                exploration = exp_services.get_exploration_by_id(
+                    exploration_id, version=version)
         except:
             raise self.PageNotFoundException
 
         states = {}
         for state_name in exploration.states:
             state_dict = exploration.states[state_name].to_dict()
-            state_dict['unresolved_answers'] = (
-                stats_services.get_top_unresolved_answers_for_default_rule(
-                    exploration_id, state_name))
             states[state_name] = state_dict
-
+        exp_user_data = user_models.ExplorationUserDataModel.get(
+            self.user_id, exploration_id)
+        draft_changes = (exp_user_data.draft_change_list if exp_user_data
+                         and exp_user_data.draft_change_list else None)
+        is_version_of_draft_valid = (
+            exp_services.is_version_of_draft_valid(
+                exploration_id, exp_user_data.draft_change_list_exp_version)
+            if exp_user_data and exp_user_data.draft_change_list_exp_version
+            else None)
+        exploration_email_preferences = (
+            user_services.get_email_preferences_for_exploration(
+                self.user_id, exploration_id))
         editor_dict = {
             'category': exploration.category,
             'exploration_id': exploration_id,
@@ -293,6 +309,9 @@ class ExplorationHandler(EditorHandler):
             'tags': exploration.tags,
             'title': exploration.title,
             'version': exploration.version,
+            'is_version_of_draft_valid': is_version_of_draft_valid,
+            'draft_changes': draft_changes,
+            'email_preferences': exploration_email_preferences.to_dict()
         }
 
         return editor_dict
@@ -300,12 +319,16 @@ class ExplorationHandler(EditorHandler):
     def get(self, exploration_id):
         """Gets the data for the exploration overview page."""
         if not rights_manager.Actor(self.user_id).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration_id):
+                feconf.ACTIVITY_TYPE_EXPLORATION, exploration_id):
             raise self.PageNotFoundException
-
+        # 'apply_draft' and 'v'(version) are optional parameters because the
+        # exploration history tab also uses this handler, and these parameters
+        # are not used by that tab.
         version = self.request.get('v', default_value=None)
+        apply_draft = self.request.get('apply_draft', default_value=False)
         self.values.update(
-            self._get_exploration_data(exploration_id, version=version))
+            self._get_exploration_data(
+                exploration_id, apply_draft=apply_draft, version=version))
         self.render_json(self.values)
 
     @require_editor
@@ -317,7 +340,6 @@ class ExplorationHandler(EditorHandler):
 
         commit_message = self.payload.get('commit_message')
         change_list = self.payload.get('change_list')
-
         try:
             exp_services.update_exploration(
                 self.user_id, exploration_id, change_list, commit_message)
@@ -330,36 +352,25 @@ class ExplorationHandler(EditorHandler):
     @require_editor
     def delete(self, exploration_id):
         """Deletes the given exploration."""
-        role = self.request.get('role')
-        if not role:
-            role = None
 
-        if role == rights_manager.ROLE_ADMIN:
-            if not self.is_admin:
-                logging.error(
-                    '%s tried to delete an exploration, but is not an admin.'
-                    % self.user_id)
-                raise self.UnauthorizedUserException(
-                    'User %s does not have permissions to delete exploration '
-                    '%s' % (self.user_id, exploration_id))
-        elif role == rights_manager.ROLE_MODERATOR:
-            if not self.is_moderator:
-                logging.error(
-                    '%s tried to delete an exploration, but is not a '
-                    'moderator.' % self.user_id)
-                raise self.UnauthorizedUserException(
-                    'User %s does not have permissions to delete exploration '
-                    '%s' % (self.user_id, exploration_id))
-        elif role is not None:
-            raise self.InvalidInputException('Invalid role: %s' % role)
+        role_description = ''
+        if self.is_admin:
+            role_description = 'admin'
+        elif self.is_moderator:
+            role_description = 'moderator'
 
-        logging.info(
-            '%s %s tried to delete exploration %s' %
-            (role, self.user_id, exploration_id))
+        log_debug_string = ''
+        if role_description == '':
+            log_debug_string = '%s tried to delete exploration %s' % (
+                self.user_id, exploration_id)
+        else:
+            log_debug_string = '(%s) %s tried to delete exploration %s' % (
+                role_description, self.user_id, exploration_id)
+        logging.debug(log_debug_string)
 
         exploration = exp_services.get_exploration_by_id(exploration_id)
         can_delete = rights_manager.Actor(self.user_id).can_delete(
-            rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration.id)
+            feconf.ACTIVITY_TYPE_EXPLORATION, exploration.id)
         if not can_delete:
             raise self.UnauthorizedUserException(
                 'User %s does not have permissions to delete exploration %s' %
@@ -370,15 +381,18 @@ class ExplorationHandler(EditorHandler):
         exp_services.delete_exploration(
             self.user_id, exploration_id, force_deletion=is_exploration_cloned)
 
-        logging.info(
-            '%s %s deleted exploration %s' %
-            (role, self.user_id, exploration_id))
+        log_info_string = ''
+        if role_description == '':
+            log_info_string = '%s deleted exploration %s' % (
+                self.user_id, exploration_id)
+        else:
+            log_info_string = '(%s) %s deleted exploration %s' % (
+                role_description, self.user_id, exploration_id)
+        logging.info(log_info_string)
 
 
 class ExplorationRightsHandler(EditorHandler):
     """Handles management of exploration editing rights."""
-
-    PAGE_NAME_FOR_CSRF = 'editor'
 
     @require_editor
     def put(self, exploration_id):
@@ -397,7 +411,7 @@ class ExplorationRightsHandler(EditorHandler):
         if new_member_username:
             if not rights_manager.Actor(
                     self.user_id).can_modify_roles(
-                        rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                        feconf.ACTIVITY_TYPE_EXPLORATION,
                         exploration_id):
                 raise self.UnauthorizedUserException(
                     'Only an owner of this exploration can add or change '
@@ -411,6 +425,9 @@ class ExplorationRightsHandler(EditorHandler):
 
             rights_manager.assign_role_for_exploration(
                 self.user_id, exploration_id, new_member_id, new_member_role)
+            email_manager.send_role_notification_email(
+                self.user_id, new_member_id, new_member_role, exploration_id,
+                exploration.title)
 
         elif is_public is not None:
             exploration = exp_services.get_exploration_by_id(exploration_id)
@@ -470,8 +487,6 @@ class ExplorationRightsHandler(EditorHandler):
 class ExplorationModeratorRightsHandler(EditorHandler):
     """Handles management of exploration rights by moderators."""
 
-    PAGE_NAME_FOR_CSRF = 'editor'
-
     @base.require_moderator
     def put(self, exploration_id):
         """Updates the publication status of the given exploration, and sends
@@ -529,10 +544,44 @@ class ExplorationModeratorRightsHandler(EditorHandler):
         })
 
 
+class UserExplorationEmailsHandler(EditorHandler):
+    """Handles management of user email notification preferences for this
+    exploration.
+    """
+
+    def put(self, exploration_id):
+        """Updates the email notification preferences for the given exploration.
+
+        Args:
+            exploration_id: str. The exploration id.
+
+        Raises:
+            InvalidInputException: Invalid message type.
+        """
+
+        mute = self.payload.get('mute')
+        message_type = self.payload.get('message_type')
+
+        if message_type == feconf.MESSAGE_TYPE_FEEDBACK:
+            user_services.set_email_preferences_for_exploration(
+                self.user_id, exploration_id, mute_feedback_notifications=mute)
+        elif message_type == feconf.MESSAGE_TYPE_SUGGESTION:
+            user_services.set_email_preferences_for_exploration(
+                self.user_id, exploration_id,
+                mute_suggestion_notifications=mute)
+        else:
+            raise self.InvalidInputException(
+                'Invalid message type.')
+
+        exploration_email_preferences = (
+            user_services.get_email_preferences_for_exploration(
+                self.user_id, exploration_id))
+        self.render_json({
+            'email_preferences': exploration_email_preferences.to_dict()
+        })
+
 class ResolvedAnswersHandler(EditorHandler):
     """Allows learners' answers for a state to be marked as resolved."""
-
-    PAGE_NAME_FOR_CSRF = 'editor'
 
     @require_editor
     def put(self, exploration_id, state_name):
@@ -553,9 +602,11 @@ class ResolvedAnswersHandler(EditorHandler):
 
 class UntrainedAnswersHandler(EditorHandler):
     """Returns answers that learners have submitted, but that Oppia hasn't been
-    explicitly trained to respond to be an exploration author.
+    explicitly trained to respond to by an exploration author.
     """
     NUMBER_OF_TOP_ANSWERS_PER_RULE = 50
+
+    GET_HANDLER_ERROR_RETURN_TYPE = feconf.HANDLER_TYPE_JSON
 
     def get(self, exploration_id, escaped_state_name):
         """Handles GET requests."""
@@ -564,7 +615,7 @@ class UntrainedAnswersHandler(EditorHandler):
         except:
             raise self.PageNotFoundException
 
-        state_name = self.unescape_state_name(escaped_state_name)
+        state_name = utils.unescape_encoded_uri_component(escaped_state_name)
         if state_name not in exploration.states:
             # If trying to access a non-existing state, there is no training
             # data associated with it.
@@ -588,11 +639,12 @@ class UntrainedAnswersHandler(EditorHandler):
 
         # The total number of possible answers is 100 because it requests the
         # top 50 answers matched to the default rule and the top 50 answers
-        # matched to a fuzzy rule individually.
-        answers = stats_services.get_top_state_rule_answers(
+        # matched to the classifier individually.
+        submitted_answers = stats_services.get_top_state_rule_answers(
             exploration_id, state_name, [
-                exp_domain.DEFAULT_RULESPEC_STR, rule_domain.FUZZY_RULE_TYPE],
-            self.NUMBER_OF_TOP_ANSWERS_PER_RULE)
+                exp_domain.DEFAULT_OUTCOME_CLASSIFICATION,
+                exp_domain.TRAINING_DATA_CLASSIFICATION])[
+                    :self.NUMBER_OF_TOP_ANSWERS_PER_RULE]
 
         interaction = state.interaction
         unhandled_answers = []
@@ -603,14 +655,15 @@ class UntrainedAnswersHandler(EditorHandler):
 
             try:
                 # Normalize the answers.
-                for answer in answers:
-                    answer['value'] = interaction_instance.normalize_answer(
-                        answer['value'])
+                for answer in submitted_answers:
+                    answer['answer'] = interaction_instance.normalize_answer(
+                        answer['answer'])
 
                 trained_answers = set()
                 for answer_group in interaction.answer_groups:
                     for rule_spec in answer_group.rule_specs:
-                        if rule_spec.rule_type == rule_domain.FUZZY_RULE_TYPE:
+                        if (rule_spec.rule_type ==
+                                exp_domain.RULE_TYPE_CLASSIFIER):
                             trained_answers.update(
                                 interaction_instance.normalize_answer(trained)
                                 for trained
@@ -624,8 +677,8 @@ class UntrainedAnswersHandler(EditorHandler):
                     in interaction.confirmed_unclassified_answers))
 
                 unhandled_answers = [
-                    answer for answer in answers
-                    if answer['value'] not in trained_answers
+                    answer for answer in submitted_answers
+                    if answer['answer'] not in trained_answers
                 ]
             except Exception as e:
                 logging.warning(
@@ -641,6 +694,9 @@ class ExplorationDownloadHandler(EditorHandler):
     """Downloads an exploration as a zip file, or dict of YAML strings
     representing states.
     """
+
+    GET_HANDLER_ERROR_RETURN_TYPE = feconf.HANDLER_TYPE_JSON
+
     def get(self, exploration_id):
         """Handles GET requests."""
         try:
@@ -649,7 +705,7 @@ class ExplorationDownloadHandler(EditorHandler):
             raise self.PageNotFoundException
 
         if not rights_manager.Actor(self.user_id).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration_id):
+                feconf.ACTIVITY_TYPE_EXPLORATION, exploration_id):
             raise self.PageNotFoundException
 
         version = self.request.get('v', default_value=exploration.version)
@@ -674,37 +730,30 @@ class ExplorationDownloadHandler(EditorHandler):
                 'Unrecognized output format %s' % output_format)
 
 
-class StateDownloadHandler(EditorHandler):
-    """Downloads a state as a YAML string."""
+class StateYamlHandler(EditorHandler):
+    """Given a representation of a state, converts it to a YAML string.
 
-    def get(self, exploration_id):
-        """Handles GET requests."""
+    Note that this handler is stateless; it does not make use of the storage
+    layer.
+    """
+
+    def post(self):
+        """Handles POST requests."""
         try:
-            exploration = exp_services.get_exploration_by_id(exploration_id)
-        except:
+            state_dict = self.payload.get('state_dict')
+            width = self.payload.get('width')
+        except Exception:
             raise self.PageNotFoundException
 
-        if not rights_manager.Actor(self.user_id).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, exploration_id):
-            raise self.PageNotFoundException
-
-        version = self.request.get('v', default_value=exploration.version)
-        width = int(self.request.get('width', default_value=80))
-
-        try:
-            state = self.request.get('state')
-        except:
-            raise self.InvalidInputException('State not found')
-
-        exploration_dict = exp_services.export_states_to_yaml(
-            exploration_id, version=version, width=width)
-        if state not in exploration_dict:
-            raise self.PageNotFoundException
-        self.response.write(exploration_dict[state])
+        self.render_json({
+            'yaml': exp_services.convert_state_dict_to_yaml(state_dict, width),
+        })
 
 
 class ExplorationResourcesHandler(EditorHandler):
     """Manages assets associated with an exploration."""
+
+    GET_HANDLER_ERROR_RETURN_TYPE = feconf.HANDLER_TYPE_JSON
 
     @require_editor
     def get(self, exploration_id):
@@ -718,6 +767,8 @@ class ExplorationResourcesHandler(EditorHandler):
 
 class ExplorationSnapshotsHandler(EditorHandler):
     """Returns the exploration snapshot history."""
+
+    GET_HANDLER_ERROR_RETURN_TYPE = feconf.HANDLER_TYPE_JSON
 
     def get(self, exploration_id):
         """Handles GET requests."""
@@ -762,6 +813,7 @@ class ExplorationRevertHandler(EditorHandler):
                 'Cannot revert to version %s from version %s.' %
                 (revert_to_version, current_version))
 
+        exp_services.discard_draft(exploration_id, self.user_id)
         exp_services.revert_exploration(
             self.user_id, exploration_id, current_version, revert_to_version)
         self.render_json({})
@@ -769,6 +821,8 @@ class ExplorationRevertHandler(EditorHandler):
 
 class ExplorationStatisticsHandler(EditorHandler):
     """Returns statistics for an exploration."""
+
+    GET_HANDLER_ERROR_RETURN_TYPE = feconf.HANDLER_TYPE_JSON
 
     def get(self, exploration_id, exploration_version):
         """Handles GET requests."""
@@ -783,6 +837,8 @@ class ExplorationStatisticsHandler(EditorHandler):
 
 class ExplorationStatsVersionsHandler(EditorHandler):
     """Returns statistics versions for an exploration."""
+
+    GET_HANDLER_ERROR_RETURN_TYPE = feconf.HANDLER_TYPE_JSON
 
     def get(self, exploration_id):
         """Handles GET requests."""
@@ -799,6 +855,8 @@ class ExplorationStatsVersionsHandler(EditorHandler):
 class StateRulesStatsHandler(EditorHandler):
     """Returns detailed learner answer statistics for a state."""
 
+    GET_HANDLER_ERROR_RETURN_TYPE = feconf.HANDLER_TYPE_JSON
+
     def get(self, exploration_id, escaped_state_name):
         """Handles GET requests."""
         try:
@@ -806,15 +864,15 @@ class StateRulesStatsHandler(EditorHandler):
         except:
             raise self.PageNotFoundException
 
-        state_name = self.unescape_state_name(escaped_state_name)
+        state_name = utils.unescape_encoded_uri_component(escaped_state_name)
         if state_name not in exploration.states:
             logging.error('Could not find state: %s' % state_name)
             logging.error('Available states: %s' % exploration.states.keys())
             raise self.PageNotFoundException
 
         self.render_json({
-            'rules_stats': stats_services.get_state_rules_stats(
-                exploration_id, state_name)
+            'visualizations_info': stats_services.get_visualizations_info(
+                exploration_id, state_name),
         })
 
 
@@ -869,54 +927,41 @@ class ImageUploadHandler(EditorHandler):
         self.render_json({'filepath': filepath})
 
 
-class ChangeListSummaryHandler(EditorHandler):
-    """Returns a summary of a changelist applied to a given exploration."""
-
-    @require_editor
-    def post(self, exploration_id):
-        """Handles POST requests."""
-        change_list = self.payload.get('change_list')
-        version = self.payload.get('version')
-        current_exploration = exp_services.get_exploration_by_id(
-            exploration_id)
-
-        if version != current_exploration.version:
-            # TODO(sll): Improve this.
-            self.render_json({
-                'error': (
-                    'Sorry! Someone else has edited and committed changes to '
-                    'this exploration while you were editing it. We suggest '
-                    'opening another browser tab -- which will load the new '
-                    'version of the exploration -- then transferring your '
-                    'changes there. We will try to make this easier in the '
-                    'future -- we have not done it yet because figuring out '
-                    'how to merge different people\'s changes is hard. '
-                    '(Trying to edit version %s, but the current version is '
-                    '%s.).' % (version, current_exploration.version)
-                )
-            })
-        else:
-            utils.recursively_remove_key(change_list, '$$hashKey')
-
-            summary = exp_services.get_summary_of_change_list(
-                current_exploration, change_list)
-            updated_exploration = exp_services.apply_change_list(
-                exploration_id, change_list)
-            warning_message = ''
-            try:
-                updated_exploration.validate(strict=True)
-            except utils.ValidationError as e:
-                warning_message = unicode(e)
-
-            self.render_json({
-                'summary': summary,
-                'warning_message': warning_message
-            })
-
-
 class StartedTutorialEventHandler(EditorHandler):
     """Records that this user has started the state editor tutorial."""
 
     def post(self):
         """Handles GET requests."""
         user_services.record_user_started_state_editor_tutorial(self.user_id)
+
+
+class EditorAutosaveHandler(ExplorationHandler):
+    """Handles requests from the editor for draft autosave."""
+
+    @require_editor
+    def put(self, exploration_id):
+        """Handles PUT requests for draft updation."""
+        # Raise an Exception if the draft change list fails non-strict
+        # validation.
+        try:
+            change_list = self.payload.get('change_list')
+            version = self.payload.get('version')
+            exp_services.create_or_update_draft(
+                exploration_id, self.user_id, change_list, version,
+                datetime.datetime.utcnow())
+        except utils.ValidationError as e:
+            # We leave any pre-existing draft changes in the datastore.
+            raise self.InvalidInputException(e)
+
+        # If the value passed here is False, have the user discard the draft
+        # changes. We save the draft to the datastore even if the version is
+        # invalid, so that it is available for recovery later.
+        self.render_json({
+            'is_version_of_draft_valid': exp_services.is_version_of_draft_valid(
+                exploration_id, version)})
+
+    @require_editor
+    def post(self, exploration_id):
+        """Handles POST request for discarding draft changes."""
+        exp_services.discard_draft(exploration_id, self.user_id)
+        self.render_json({})

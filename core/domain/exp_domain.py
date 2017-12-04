@@ -31,7 +31,6 @@ from core.domain import html_cleaner
 from core.domain import gadget_registry
 from core.domain import interaction_registry
 from core.domain import param_domain
-from core.domain import rule_domain
 from core.domain import trigger_registry
 import feconf
 import jinja_utils
@@ -82,10 +81,26 @@ CMD_EDIT_EXPLORATION_PROPERTY = 'edit_exploration_property'
 CMD_MIGRATE_STATES_SCHEMA_TO_LATEST_VERSION = (
     'migrate_states_schema_to_latest_version')
 
-# This represents the stringified version of a 'default rule.' This is to be
-# used as an identifier for the default rule when storing which rule an answer
-# was matched against.
-DEFAULT_RULESPEC_STR = 'Default'
+# These are categories to which answers may be classified. These values should
+# not be changed because they are persisted in the data store within answer
+# logs.
+
+# Represents answers classified using rules defined as part of an interaction.
+EXPLICIT_CLASSIFICATION = 'explicit'
+# Represents answers which are contained within the training data of an answer
+# group.
+TRAINING_DATA_CLASSIFICATION = 'training_data_match'
+# Represents answers which were predicted using a statistical training model
+# from training data within an answer group.
+STATISTICAL_CLASSIFICATION = 'statistical_classifier'
+# Represents answers which led to the 'default outcome' of an interaction,
+# rather than belonging to a specific answer group.
+DEFAULT_OUTCOME_CLASSIFICATION = 'default_outcome'
+
+# This represents the stringified version of a rule which uses statistical
+# classification for evaluation. Answers which are matched to rules with this
+# rulespec will be stored with the STATISTICAL_CLASSIFICATION category.
+RULE_TYPE_CLASSIFIER = 'FuzzyMatches'
 
 
 def _get_full_customization_args(customization_args, ca_specs):
@@ -112,7 +127,8 @@ def _validate_customization_args_and_values(
     validation.
 
     Note that this may modify the given customization_args dict, if it has
-    extra or missing keys.
+    extra or missing keys. It also normalizes any HTML in the customization_args
+    dict.
     """
     ca_spec_names = [
         ca_spec.name for ca_spec in ca_specs_to_validate_against]
@@ -145,9 +161,10 @@ def _validate_customization_args_and_values(
     # Check that each value has the correct type.
     for ca_spec in ca_specs_to_validate_against:
         try:
-            schema_utils.normalize_against_schema(
-                customization_args[ca_spec.name]['value'],
-                ca_spec.schema)
+            customization_args[ca_spec.name]['value'] = (
+                schema_utils.normalize_against_schema(
+                    customization_args[ca_spec.name]['value'],
+                    ca_spec.schema))
         except Exception:
             # TODO(sll): Raise an actual exception here if parameters are not
             # involved. (If they are, can we get sample values for the state
@@ -162,6 +179,12 @@ class ExplorationChange(object):
     interpreted in general) preserve backward-compatibility with the
     exploration snapshots in the datastore. Do not modify the definitions of
     cmd keys that already exist.
+
+    NOTE TO DEVELOPERS: Please note that, for a brief period around
+    Feb - Apr 2017, change dicts related to editing of answer groups
+    accidentally stored the old_value using a ruleSpecs key instead of a
+    rule_specs key. So, if you are making use of this data, make sure to
+    verify the format of the old_value before doing any processing.
     """
 
     STATE_PROPERTIES = (
@@ -352,15 +375,6 @@ class RuleSpec(object):
         self.rule_type = rule_type
         self.inputs = inputs
 
-    def stringify_classified_rule(self):
-        """Returns a string representation of a rule (for the stats log)."""
-        if self.rule_type == rule_domain.FUZZY_RULE_TYPE:
-            return self.rule_type
-        else:
-            param_list = [
-                utils.to_ascii(val) for val in self.inputs.values()]
-            return '%s(%s)' % (self.rule_type, ','.join(param_list))
-
     def validate(self, rule_params_list, exp_param_specs_dict):
         """Validates a RuleSpec value object. It ensures the inputs dict does
         not refer to any non-existent parameters and that it contains values
@@ -493,15 +507,16 @@ class Outcome(object):
 class AnswerGroup(object):
     """Value object for an answer group. Answer groups represent a set of rules
     dictating whether a shared feedback should be shared with the user. These
-    rules are ORed together. Answer groups may also support fuzzy/implicit
-    rules that involve soft matching of answers to a set of training data
-    and/or example answers dictated by the creator.
+    rules are ORed together. Answer groups may also support a classifier
+    that involve soft matching of answers to a set of training data and/or
+    example answers dictated by the creator.
     """
     def to_dict(self):
         return {
             'rule_specs': [rule_spec.to_dict()
                            for rule_spec in self.rule_specs],
             'outcome': self.outcome.to_dict(),
+            'correct': self.correct,
         }
 
     @classmethod
@@ -509,20 +524,22 @@ class AnswerGroup(object):
         return cls(
             Outcome.from_dict(answer_group_dict['outcome']),
             [RuleSpec.from_dict(rs) for rs in answer_group_dict['rule_specs']],
+            answer_group_dict['correct'],
         )
 
-    def __init__(self, outcome, rule_specs):
+    def __init__(self, outcome, rule_specs, correct):
         self.rule_specs = [RuleSpec(
             rule_spec.rule_type, rule_spec.inputs
         ) for rule_spec in rule_specs]
 
         self.outcome = outcome
+        self.correct = correct
 
-    def validate(self, obj_type, exp_param_specs_dict):
+    def validate(self, interaction, exp_param_specs_dict):
         """Rule validation.
 
         Verifies that all rule classes are valid, and that the AnswerGroup only
-        has one fuzzy rule.
+        has one classifier rule.
         """
         if not isinstance(self.rule_specs, list):
             raise utils.ValidationError(
@@ -530,38 +547,36 @@ class AnswerGroup(object):
                 % self.rule_specs)
         if len(self.rule_specs) < 1:
             raise utils.ValidationError(
-                'There must be at least one rule for each answer group.'
-                % self.rule_specs)
+                'There must be at least one rule for each answer group.')
+        if not isinstance(self.correct, bool):
+            raise utils.ValidationError(
+                'The "correct" field should be a boolean, received %s'
+                % self.correct)
 
-        all_rule_classes = rule_domain.get_rules_for_obj_type(obj_type)
-        seen_fuzzy_rule = False
+        seen_classifier_rule = False
         for rule_spec in self.rule_specs:
-            rule_class = None
-            try:
-                rule_class = next(
-                    r for r in all_rule_classes
-                    if r.__name__ == rule_spec.rule_type)
-            except StopIteration:
+            if rule_spec.rule_type not in interaction.rules_dict:
                 raise utils.ValidationError(
                     'Unrecognized rule type: %s' % rule_spec.rule_type)
-            if rule_class.__name__ == rule_domain.FUZZY_RULE_TYPE:
-                if seen_fuzzy_rule:
+
+            if rule_spec.rule_type == RULE_TYPE_CLASSIFIER:
+                if seen_classifier_rule:
                     raise utils.ValidationError(
-                        'AnswerGroups can only have one fuzzy rule.')
-                seen_fuzzy_rule = True
+                        'AnswerGroups can only have one classifier rule.')
+                seen_classifier_rule = True
 
             rule_spec.validate(
-                rule_domain.get_param_list(rule_class.description),
+                interaction.get_rule_param_list(rule_spec.rule_type),
                 exp_param_specs_dict)
 
         self.outcome.validate()
 
-    def get_fuzzy_rule_index(self):
-        """Will return the answer group's fuzzy rule index, or None if it
-        doesn't exist.
+    def get_classifier_rule_index(self):
+        """Returns the index of the classifier in the answer groups, or None
+        if it doesn't exist.
         """
         for (rule_spec_index, rule_spec) in enumerate(self.rule_specs):
-            if rule_spec.rule_type == rule_domain.FUZZY_RULE_TYPE:
+            if rule_spec.rule_type == RULE_TYPE_CLASSIFIER:
                 return rule_spec_index
         return None
 
@@ -752,11 +767,8 @@ class InteractionInstance(object):
             raise utils.ValidationError(
                 'Terminal interactions must not have any answer groups.')
 
-        obj_type = (
-            interaction_registry.Registry.get_interaction_by_id(
-                self.id).answer_type)
         for answer_group in self.answer_groups:
-            answer_group.validate(obj_type, exp_param_specs_dict)
+            answer_group.validate(interaction, exp_param_specs_dict)
         if self.default_outcome is not None:
             self.default_outcome.validate()
 
@@ -1110,7 +1122,8 @@ class State(object):
         'fallbacks': [],
     }
 
-    def __init__(self, content, param_changes, interaction):
+    def __init__(self, content, param_changes, interaction,
+                 classifier_model_id=None):
         # The content displayed to the reader in this state.
         self.content = [Content(item.type, item.value) for item in content]
         # Parameter changes associated with this state.
@@ -1123,6 +1136,7 @@ class State(object):
             interaction.id, interaction.customization_args,
             interaction.answer_groups, interaction.default_outcome,
             interaction.confirmed_unclassified_answers, interaction.fallbacks)
+        self.classifier_model_id = classifier_model_id
 
     def validate(self, exp_param_specs_dict, allow_null_interaction):
         if not isinstance(self.content, list):
@@ -1185,17 +1199,12 @@ class State(object):
                     'received %s' % rule_specs_list)
 
             answer_group = AnswerGroup(Outcome.from_dict(
-                answer_group_dict['outcome']), [])
+                answer_group_dict['outcome']), [], answer_group_dict['correct'])
             answer_group.outcome.feedback = [
                 html_cleaner.clean(feedback)
                 for feedback in answer_group.outcome.feedback]
             for rule_dict in rule_specs_list:
                 rule_spec = RuleSpec.from_dict(rule_dict)
-
-                matched_rule = (
-                    interaction_registry.Registry.get_interaction_by_id(
-                        self.interaction.id
-                    ).get_rule_by_name(rule_spec.rule_type))
 
                 # Normalize and store the rule params.
                 rule_inputs = rule_spec.inputs
@@ -1204,8 +1213,10 @@ class State(object):
                         'Expected rule_inputs to be a dict, received %s'
                         % rule_inputs)
                 for param_name, value in rule_inputs.iteritems():
-                    param_type = rule_domain.get_obj_type_for_param_name(
-                        matched_rule, param_name)
+                    param_type = (
+                        interaction_registry.Registry.get_interaction_by_id(
+                            self.interaction.id
+                        ).get_rule_param_type(rule_spec.rule_type, param_name))
 
                     if (isinstance(value, basestring) and
                             '{{' in value and '}}' in value):
@@ -1262,7 +1273,8 @@ class State(object):
             'content': [item.to_dict() for item in self.content],
             'param_changes': [param_change.to_dict()
                               for param_change in self.param_changes],
-            'interaction': self.interaction.to_dict()
+            'interaction': self.interaction.to_dict(),
+            'classifier_model_id': self.classifier_model_id,
         }
 
     @classmethod
@@ -1272,7 +1284,9 @@ class State(object):
              for item in state_dict['content']],
             [param_domain.ParamChange.from_dict(param)
              for param in state_dict['param_changes']],
-            InteractionInstance.from_dict(state_dict['interaction']))
+            InteractionInstance.from_dict(state_dict['interaction']),
+            state_dict['classifier_model_id'],
+        )
 
     @classmethod
     def create_default_state(
@@ -1325,7 +1339,9 @@ class Exploration(object):
 
     @classmethod
     def create_default_exploration(
-            cls, exploration_id, title, category, objective='',
+            cls, exploration_id, title=feconf.DEFAULT_EXPLORATION_TITLE,
+            category=feconf.DEFAULT_EXPLORATION_CATEGORY,
+            objective=feconf.DEFAULT_EXPLORATION_OBJECTIVE,
             language_code=feconf.DEFAULT_LANGUAGE_CODE):
         init_state_dict = State.create_default_state(
             feconf.DEFAULT_INIT_STATE_NAME, is_initial_state=True).to_dict()
@@ -1348,8 +1364,8 @@ class Exploration(object):
         # from an ExplorationModel/dictionary MUST be exhaustive and complete.
         exploration = cls.create_default_exploration(
             exploration_dict['id'],
-            exploration_dict['title'],
-            exploration_dict['category'],
+            title=exploration_dict['title'],
+            category=exploration_dict['category'],
             objective=exploration_dict['objective'],
             language_code=exploration_dict['language_code'])
         exploration.tags = exploration_dict['tags']
@@ -1401,6 +1417,7 @@ class Exploration(object):
                         'inputs': rule_spec['inputs'],
                         'rule_type': rule_spec['rule_type'],
                     } for rule_spec in group['rule_specs']],
+                    'correct': False,
                 })
                 for group in idict['answer_groups']]
 
@@ -1441,13 +1458,15 @@ class Exploration(object):
         if not isinstance(self.title, basestring):
             raise utils.ValidationError(
                 'Expected title to be a string, received %s' % self.title)
-        utils.require_valid_name(self.title, 'the exploration title')
+        utils.require_valid_name(
+            self.title, 'the exploration title', allow_empty=True)
 
         if not isinstance(self.category, basestring):
             raise utils.ValidationError(
                 'Expected category to be a string, received %s'
                 % self.category)
-        utils.require_valid_name(self.category, 'the exploration category')
+        utils.require_valid_name(
+            self.category, 'the exploration category', allow_empty=True)
 
         if not isinstance(self.objective, basestring):
             raise utils.ValidationError(
@@ -1650,6 +1669,14 @@ class Exploration(object):
                 self._verify_no_dead_ends()
             except utils.ValidationError as e:
                 warnings_list.append(unicode(e))
+
+            if not self.title:
+                warnings_list.append(
+                    'A title must be specified (in the \'Settings\' tab).')
+
+            if not self.category:
+                warnings_list.append(
+                    'A category must be specified (in the \'Settings\' tab).')
 
             if not self.objective:
                 warnings_list.append(
@@ -2153,10 +2180,15 @@ class Exploration(object):
                     else:
                         answer_groups.append(group)
 
-            is_terminal = (
-                interaction_registry.Registry.get_interaction_by_id(
-                    interaction['id']
-                ).is_terminal if interaction['id'] is not None else False)
+            try:
+                is_terminal = (
+                    interaction_registry.Registry.get_interaction_by_id(
+                        interaction['id']
+                    ).is_terminal if interaction['id'] is not None else False)
+            except KeyError:
+                raise utils.ExplorationConversionError(
+                    'Trying to migrate exploration containing non-existent '
+                    'interaction ID: %s' % interaction['id'])
             if not is_terminal:
                 interaction['answer_groups'] = answer_groups
                 interaction['default_outcome'] = default_outcome
@@ -2211,12 +2243,40 @@ class Exploration(object):
 
         return states_dict
 
+    # TODO(bhenning): Remove pre_v4_states_conversion_func when the answer
+    # migration is completed.
+    @classmethod
+    def _convert_states_v7_dict_to_v8_dict(cls, states_dict):
+        """Converts from version 7 to 8. Version 8 contains classifier
+        model id.
+        """
+        for state_dict in states_dict.values():
+            state_dict['classifier_model_id'] = None
+        return states_dict
+
+    @classmethod
+    def _convert_states_v8_dict_to_v9_dict(cls, states_dict):
+        """Converts from version 8 to 9. Version 9 contains 'correct'
+        field in answer groups.
+        """
+        for state_dict in states_dict.values():
+            answer_groups = state_dict['interaction']['answer_groups']
+            for answer_group in answer_groups:
+                answer_group['correct'] = False
+        return states_dict
+
     @classmethod
     def update_states_from_model(
-            cls, versioned_exploration_states, current_states_schema_version):
+            cls, versioned_exploration_states, current_states_schema_version,
+            pre_v4_states_conversion_func=None):
         """Converts the states blob contained in the given
         versioned_exploration_states dict from current_states_schema_version to
         current_states_schema_version + 1.
+
+        If pre_v4_states_conversion_func is provided, it will be called in the
+        migration process before migrating from v3 to v4. It is provided a
+        states dict and will overwrite the migrated states dict with the dict it
+        returns.
 
         Note that the versioned_exploration_states being passed in is modified
         in-place.
@@ -2224,6 +2284,10 @@ class Exploration(object):
         versioned_exploration_states['states_schema_version'] = (
             current_states_schema_version + 1)
 
+        if pre_v4_states_conversion_func and current_states_schema_version == 3:
+            versioned_exploration_states['states'] = (
+                pre_v4_states_conversion_func(
+                    versioned_exploration_states['states']))
         conversion_fn = getattr(cls, '_convert_states_v%s_dict_to_v%s_dict' % (
             current_states_schema_version, current_states_schema_version + 1))
         versioned_exploration_states['states'] = conversion_fn(
@@ -2233,7 +2297,7 @@ class Exploration(object):
     # incompatible changes are made to the exploration schema in the YAML
     # definitions, this version number must be changed and a migration process
     # put in place.
-    CURRENT_EXP_SCHEMA_VERSION = 10
+    CURRENT_EXP_SCHEMA_VERSION = 12
     LAST_UNTITLED_SCHEMA_VERSION = 9
 
     @classmethod
@@ -2396,6 +2460,32 @@ class Exploration(object):
         return exploration_dict
 
     @classmethod
+    def _convert_v10_dict_to_v11_dict(cls, exploration_dict):
+        """Converts a v10 exploration dict into a v11 exploration dict."""
+
+        exploration_dict['schema_version'] = 11
+
+        exploration_dict['states'] = cls._convert_states_v7_dict_to_v8_dict(
+            exploration_dict['states'])
+
+        exploration_dict['states_schema_version'] = 8
+
+        return exploration_dict
+
+    @classmethod
+    def _convert_v11_dict_to_v12_dict(cls, exploration_dict):
+        """Converts a v11 exploration dict into a v12 exploration dict."""
+
+        exploration_dict['schema_version'] = 12
+
+        exploration_dict['states'] = cls._convert_states_v8_dict_to_v9_dict(
+            exploration_dict['states'])
+
+        exploration_dict['states_schema_version'] = 9
+
+        return exploration_dict
+
+    @classmethod
     def _migrate_to_latest_yaml_version(
             cls, yaml_content, title=None, category=None):
         try:
@@ -2413,8 +2503,8 @@ class Exploration(object):
         if not (1 <= exploration_schema_version
                 <= cls.CURRENT_EXP_SCHEMA_VERSION):
             raise Exception(
-                'Sorry, we can only process v1 to v%s YAML files at '
-                'present.' % cls.CURRENT_EXP_SCHEMA_VERSION)
+                'Sorry, we can only process v1 to v%s exploration YAML files '
+                'at present.' % cls.CURRENT_EXP_SCHEMA_VERSION)
         if exploration_schema_version == 1:
             exploration_dict = cls._convert_v1_dict_to_v2_dict(
                 exploration_dict)
@@ -2459,6 +2549,17 @@ class Exploration(object):
             exploration_dict = cls._convert_v9_dict_to_v10_dict(
                 exploration_dict, title, category)
             exploration_schema_version = 10
+
+        if exploration_schema_version == 10:
+            exploration_dict = cls._convert_v10_dict_to_v11_dict(
+                exploration_dict)
+            exploration_schema_version = 11
+
+        if exploration_schema_version == 11:
+            exploration_dict = cls._convert_v11_dict_to_v12_dict(
+                exploration_dict)
+            exploration_schema_version = 12
+
 
         return (exploration_dict, initial_schema_version)
 
@@ -2547,6 +2648,7 @@ class Exploration(object):
                 for (state_name, state) in self.states.iteritems()
             },
             'title': self.title,
+            'language_code': self.language_code,
         }
 
     def get_gadget_types(self):
@@ -2562,30 +2664,25 @@ class Exploration(object):
     def get_interaction_ids(self):
         """Get all interaction ids used in this exploration."""
         return list(set([
-            state.interaction.id for state in self.states.itervalues()]))
+            state.interaction.id for state in self.states.itervalues()
+            if state.interaction.id is not None]))
 
 
 class ExplorationSummary(object):
     """Domain object for an Oppia exploration summary."""
 
     def __init__(self, exploration_id, title, category, objective,
-                 language_code, tags, ratings, status,
+                 language_code, tags, ratings, scaled_average_rating, status,
                  community_owned, owner_ids, editor_ids,
                  viewer_ids, contributor_ids, contributors_summary, version,
                  exploration_model_created_on,
-                 exploration_model_last_updated):
+                 exploration_model_last_updated,
+                 first_published_msec):
         """'ratings' is a dict whose keys are '1', '2', '3', '4', '5' and whose
         values are nonnegative integers representing frequency counts. Note
         that the keys need to be strings in order for this dict to be
         JSON-serializable.
         """
-
-        def _get_thumbnail_image_url(category):
-            return '/images/gallery/exploration_background_%s_small.png' % (
-                feconf.CATEGORIES_TO_COLORS[category] if
-                category in feconf.CATEGORIES_TO_COLORS else
-                feconf.DEFAULT_COLOR)
-
         self.id = exploration_id
         self.title = title
         self.category = category
@@ -2593,6 +2690,7 @@ class ExplorationSummary(object):
         self.language_code = language_code
         self.tags = tags
         self.ratings = ratings
+        self.scaled_average_rating = scaled_average_rating
         self.status = status
         self.community_owned = community_owned
         self.owner_ids = owner_ids
@@ -2603,4 +2701,21 @@ class ExplorationSummary(object):
         self.version = version
         self.exploration_model_created_on = exploration_model_created_on
         self.exploration_model_last_updated = exploration_model_last_updated
-        self.thumbnail_image_url = _get_thumbnail_image_url(category)
+        self.first_published_msec = first_published_msec
+
+    def to_metadata_dict(self):
+        """Given an exploration summary, this method returns a dict containing
+        id, title and objective of the exploration.
+
+        Returns:
+            A metadata dict for the given exploration summary.
+            The metadata dict has three keys:
+                'id': the exploration id
+                'title': the exploration title
+                'objective': the exploration objective
+        """
+        return {
+            'id': self.id,
+            'title': self.title,
+            'objective': self.objective,
+        }

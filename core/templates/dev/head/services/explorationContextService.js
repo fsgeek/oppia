@@ -15,13 +15,12 @@
 /**
  * @fileoverview Service for returning information about an exploration's
  * context.
- *
- * @author sll@google.com (Sean Lip)
  */
 
 oppia.constant('PAGE_CONTEXT', {
   EDITOR: 'editor',
-  LEARNER: 'learner'
+  LEARNER: 'learner',
+  OTHER: 'other'
 });
 
 oppia.constant('EDITOR_TAB_CONTEXT', {
@@ -30,20 +29,20 @@ oppia.constant('EDITOR_TAB_CONTEXT', {
 });
 
 oppia.factory('explorationContextService', [
-  '$window', 'PAGE_CONTEXT', 'EDITOR_TAB_CONTEXT',
-  function($window, PAGE_CONTEXT, EDITOR_TAB_CONTEXT) {
-    var _pageContext = null;
-    var _explorationId = null;
+  'currentLocationService', 'PAGE_CONTEXT', 'EDITOR_TAB_CONTEXT',
+  function(currentLocationService, PAGE_CONTEXT, EDITOR_TAB_CONTEXT) {
+    var pageContext = null;
+    var explorationId = null;
 
     return {
       // Returns a string representing the current tab of the editor (either
       // 'editor' or 'preview'), or null if the current tab is neither of these,
       // or the current page is not the editor.
       getEditorTabContext: function() {
-        var hash = $window.location.hash;
+        var hash = currentLocationService.getHash();
         if (hash.indexOf('#/gui') === 0) {
           return EDITOR_TAB_CONTEXT.EDITOR;
-        } else if (hash.indexOf('#/preview')) {
+        } else if (hash.indexOf('#/preview') === 0) {
           return EDITOR_TAB_CONTEXT.PREVIEW;
         } else {
           return null;
@@ -51,41 +50,52 @@ oppia.factory('explorationContextService', [
       },
       // Returns a string representing the context of the current page.
       // This is either PAGE_CONTEXT.EDITOR or PAGE_CONTEXT.LEARNER.
-      // If the current page is not one of these, an error is raised.
+      // If the current page is not one in either EDITOR or LEARNER then
+      // return PAGE_CONTEXT.OTHER
       getPageContext: function() {
-        if (_pageContext) {
-          return _pageContext;
+        if (pageContext) {
+          return pageContext;
         } else {
-          var pathnameArray = $window.location.pathname.split('/');
+          var pathnameArray = currentLocationService.getPathname().split('/');
           for (var i = 0; i < pathnameArray.length; i++) {
-            if (pathnameArray[i] === 'explore') {
-              _pageContext = PAGE_CONTEXT.LEARNER;
+            if (pathnameArray[i] === 'explore' ||
+                (pathnameArray[i] === 'embed' &&
+                 pathnameArray[i + 1] === 'exploration')) {
+              pageContext = PAGE_CONTEXT.LEARNER;
               return PAGE_CONTEXT.LEARNER;
             } else if (pathnameArray[i] === 'create') {
-              _pageContext = PAGE_CONTEXT.EDITOR;
+              pageContext = PAGE_CONTEXT.EDITOR;
               return PAGE_CONTEXT.EDITOR;
             }
           }
 
-          throw Error(
-            'ERROR: explorationContextService should not be used outside the ' +
-            'context of an exploration.');
+          return PAGE_CONTEXT.OTHER;
         }
       },
+
+      isInExplorationContext: function() {
+        return (this.getPageContext() === PAGE_CONTEXT.EDITOR ||
+          this.getPageContext() === PAGE_CONTEXT.LEARNER);
+      },
+
       // Returns a string representing the explorationId (obtained from the
       // URL).
       getExplorationId: function() {
-        if (_explorationId) {
-          return _explorationId;
+        if (explorationId) {
+          return explorationId;
         } else {
           // The pathname should be one of /explore/{exploration_id} or
-          // /create/{exploration_id} .
-          var pathnameArray = $window.location.pathname.split('/');
+          // /create/{exploration_id} or /embed/exploration/{exploration_id}.
+          var pathnameArray = currentLocationService.getPathname().split('/');
           for (var i = 0; i < pathnameArray.length; i++) {
             if (pathnameArray[i] === 'explore' ||
                 pathnameArray[i] === 'create') {
-              _explorationId = pathnameArray[i + 1];
+              explorationId = pathnameArray[i + 1];
               return pathnameArray[i + 1];
+            }
+            if (pathnameArray[i] === 'embed') {
+              explorationId = pathnameArray[i + 2];
+              return explorationId;
             }
           }
 

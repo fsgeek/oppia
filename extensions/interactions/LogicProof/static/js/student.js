@@ -14,7 +14,6 @@
 
 /**
  * @fileoverview Components used by the LogicProof interaction reader.
- * @author Jacob Davis (jacobdavis11@gmail.com)
  */
 
 var logicProofStudent = (function() {
@@ -459,9 +458,8 @@ var logicProofStudent = (function() {
           return result;
         }
       },
-      // jscs:disable disallowQuotedKeysInObjects
+      // eslint-disable-next-line quote-props
       'if': {
-        // jscs:enable disallowQuotedKeysInObjects
         format: 'bottom_up',
         evaluateExpression: function(args) {
           return args[0] ? args[1] : args[2];

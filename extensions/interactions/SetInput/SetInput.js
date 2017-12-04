@@ -19,46 +19,56 @@
  * into the directive is: the name of the parameter, followed by 'With',
  * followed by the name of the arg.
  */
+
 oppia.directive('oppiaInteractiveSetInput', [function() {
   return {
     restrict: 'E',
-    scope: {},
+    scope: {
+      onSubmit: '&'
+    },
     templateUrl: 'interaction/SetInput',
-    controller: ['$scope', '$attrs', 'setInputRulesService', function(
-        $scope, $attrs, setInputRulesService) {
-      $scope.schema = {
-        type: 'list',
-        items: {
-          type: 'unicode'
-        },
-        ui_config: {
-          add_element_text: 'Add item'
-        }
-      };
+    controller: [
+      '$scope', '$attrs', '$translate', 'setInputRulesService',
+      function($scope, $attrs, $translate, setInputRulesService) {
+        $scope.schema = {
+          type: 'list',
+          items: {
+            type: 'unicode'
+          },
+          ui_config: {
+            // TODO(mili): Translate this in the HTML.
+            add_element_text: $translate.instant(
+              'I18N_INTERACTIONS_SET_INPUT_ADD_ITEM')
+          }
+        };
 
-      $scope.answer = [];
+        // Adds an input field by default
+        $scope.answer = [''];
 
-      var hasDuplicates = function(answer) {
-        for (var i = 0; i < answer.length; i++) {
-          for (var j = 0; j < i; j++) {
-            if (angular.equals(answer[i], answer[j], true)) {
-              return true;
+        var hasDuplicates = function(answer) {
+          for (var i = 0; i < answer.length; i++) {
+            for (var j = 0; j < i; j++) {
+              if (angular.equals(answer[i], answer[j], true)) {
+                return true;
+              }
             }
           }
-        }
-        return false;
-      };
+          return false;
+        };
 
-      $scope.submitAnswer = function(answer) {
-        if (hasDuplicates(answer)) {
-          $scope.errorMessage = (
-            'Oops, it looks like your set has duplicates!');
-        } else {
-          $scope.errorMessage = '';
-          $scope.$parent.submitAnswer(answer, setInputRulesService);
-        }
-      };
-    }]
+        $scope.submitAnswer = function(answer) {
+          if (hasDuplicates(answer)) {
+            $scope.errorMessage = (
+              'I18N_INTERACTIONS_SET_INPUT_DUPLICATES_ERROR');
+          } else {
+            $scope.errorMessage = '';
+            $scope.onSubmit({
+              answer: answer,
+              rulesService: setInputRulesService
+            });
+          }
+        };
+      }]
   };
 }]);
 
@@ -84,7 +94,8 @@ oppia.directive('oppiaShortResponseSetInput', [
       controller: ['$scope', '$attrs', function($scope, $attrs) {
         var _answer = oppiaHtmlEscaper.escapedJsonToObj($attrs.answer);
         $scope.displayedAnswer = (
-          _answer.length > 0 ? _answer.join(', ') : 'No answer given.');
+          _answer.length > 0 ? _answer.join(', ') :
+          'I18N_INTERACTIONS_SET_INPUT_NO_ANSWER');
       }]
     };
   }
@@ -93,7 +104,7 @@ oppia.directive('oppiaShortResponseSetInput', [
 oppia.factory('setInputRulesService', [function() {
   return {
     Equals: function(answer, inputs) {
-      return answer.length == inputs.x.length && inputs.x.every(function(val) {
+      return answer.length === inputs.x.length && inputs.x.every(function(val) {
         return answer.indexOf(val) >= 0;
       });
     },
@@ -114,17 +125,17 @@ oppia.factory('setInputRulesService', [function() {
     },
     HasElementsNotIn: function(answer, inputs) {
       return answer.some(function(val) {
-        return inputs.x.indexOf(val) == -1;
+        return inputs.x.indexOf(val) === -1;
       });
     },
     OmitsElementsIn: function(answer, inputs) {
       return inputs.x.some(function(val) {
-        return answer.indexOf(val) == -1;
+        return answer.indexOf(val) === -1;
       });
     },
     IsDisjointFrom: function(answer, inputs) {
       return inputs.x.every(function(val) {
-        return answer.indexOf(val) == -1;
+        return answer.indexOf(val) === -1;
       });
     }
   };

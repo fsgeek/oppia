@@ -23,36 +23,42 @@ oppia.directive('oppiaInteractiveTextInput', [
   'oppiaHtmlEscaper', function(oppiaHtmlEscaper) {
     return {
       restrict: 'E',
-      scope: {},
+      scope: {
+        onSubmit: '&'
+      },
       templateUrl: 'interaction/TextInput',
-      controller: ['$scope', '$attrs', 'focusService', 'textInputRulesService',
-          function($scope, $attrs, focusService, textInputRulesService) {
-        $scope.placeholder = oppiaHtmlEscaper.escapedJsonToObj(
-          $attrs.placeholderWithValue);
-        $scope.rows = oppiaHtmlEscaper.escapedJsonToObj($attrs.rowsWithValue);
-        $scope.answer = '';
-        $scope.labelForFocusTarget = $attrs.labelForFocusTarget || null;
+      controller: [
+        '$scope', '$attrs', 'focusService', 'textInputRulesService',
+        function($scope, $attrs, focusService, textInputRulesService) {
+          $scope.placeholder = oppiaHtmlEscaper.escapedJsonToObj(
+            $attrs.placeholderWithValue);
+          $scope.rows = oppiaHtmlEscaper.escapedJsonToObj($attrs.rowsWithValue);
+          $scope.answer = '';
+          $scope.labelForFocusTarget = $attrs.labelForFocusTarget || null;
 
-        $scope.schema = {
-          type: 'unicode',
-          ui_config: {}
-        };
-        if ($scope.placeholder) {
-          $scope.schema.ui_config.placeholder = $scope.placeholder;
-        }
-        if ($scope.rows && $scope.rows !== 1) {
-          $scope.schema.ui_config.rows = $scope.rows;
-        }
-
-        $scope.submitAnswer = function(answer) {
-          if (!answer) {
-            return;
+          $scope.schema = {
+            type: 'unicode',
+            ui_config: {}
+          };
+          if ($scope.placeholder) {
+            $scope.schema.ui_config.placeholder = $scope.placeholder;
+          }
+          if ($scope.rows && $scope.rows !== 1) {
+            $scope.schema.ui_config.rows = $scope.rows;
           }
 
-          $scope.$parent.submitAnswer(
-            answer, textInputRulesService);
-        };
-      }]
+          $scope.submitAnswer = function(answer) {
+            if (!answer) {
+              return;
+            }
+
+            $scope.onSubmit({
+              answer: answer,
+              rulesService: textInputRulesService
+            });
+          };
+        }
+      ]
     };
   }
 ]);
@@ -88,7 +94,7 @@ oppia.factory('textInputRulesService', ['$filter', function($filter) {
     Equals: function(answer, inputs) {
       var normalizedAnswer = $filter('normalizeWhitespace')(answer);
       var normalizedInput = $filter('normalizeWhitespace')(inputs.x);
-      return normalizedAnswer.toLowerCase() == normalizedInput.toLowerCase();
+      return normalizedAnswer.toLowerCase() === normalizedInput.toLowerCase();
     },
     FuzzyEquals: function(answer, inputs) {
       var normalizedAnswer = $filter('normalizeWhitespace')(answer);
@@ -97,7 +103,7 @@ oppia.factory('textInputRulesService', ['$filter', function($filter) {
       var normalizedInput = $filter('normalizeWhitespace')(inputs.x);
       var inputString = normalizedInput.toLowerCase();
 
-      if (inputString == answerString) {
+      if (inputString === answerString) {
         return true;
       }
       var editDistance = [];
@@ -109,7 +115,7 @@ oppia.factory('textInputRulesService', ['$filter', function($filter) {
       }
       for (var i = 1; i <= inputString.length; i++) {
         for (var j = 1; j <= answerString.length; j++) {
-          if (inputString.charAt(i - 1) == answerString.charAt(j - 1)) {
+          if (inputString.charAt(i - 1) === answerString.charAt(j - 1)) {
             editDistance[i][j] = editDistance[i - 1][j - 1];
           } else {
             editDistance[i][j] = Math.min(editDistance[i - 1][j - 1],
@@ -118,24 +124,24 @@ oppia.factory('textInputRulesService', ['$filter', function($filter) {
           }
         }
       }
-      return editDistance[inputString.length][answerString.length] == 1;
+      return editDistance[inputString.length][answerString.length] === 1;
     },
     CaseSensitiveEquals: function(answer, inputs) {
       var normalizedAnswer = $filter('normalizeWhitespace')(answer);
       var normalizedInput = $filter('normalizeWhitespace')(inputs.x);
-      return normalizedAnswer == normalizedInput;
+      return normalizedAnswer === normalizedInput;
     },
     StartsWith: function(answer, inputs) {
       var normalizedAnswer = $filter('normalizeWhitespace')(answer);
       var normalizedInput = $filter('normalizeWhitespace')(inputs.x);
       return normalizedAnswer.toLowerCase().indexOf(
-        normalizedInput.toLowerCase()) == 0;
+        normalizedInput.toLowerCase()) === 0;
     },
     Contains: function(answer, inputs) {
       var normalizedAnswer = $filter('normalizeWhitespace')(answer);
       var normalizedInput = $filter('normalizeWhitespace')(inputs.x);
       return normalizedAnswer.toLowerCase().indexOf(
-        normalizedInput.toLowerCase()) != -1;
+        normalizedInput.toLowerCase()) !== -1;
     }
   };
 }]);

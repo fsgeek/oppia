@@ -14,8 +14,6 @@
 
 /**
  * @fileoverview Directives for the outcome destination editor.
- *
- * @author sean@seanlip.org (Sean Lip)
  */
 
 oppia.directive('outcomeDestinationEditor', [function() {
@@ -29,12 +27,16 @@ oppia.directive('outcomeDestinationEditor', [function() {
     controller: [
       '$scope', 'editorContextService', 'explorationStatesService',
       'StateGraphLayoutService', 'PLACEHOLDER_OUTCOME_DEST', 'focusService',
+      'editorFirstTimeEventsService',
       function(
           $scope, editorContextService, explorationStatesService,
-          StateGraphLayoutService, PLACEHOLDER_OUTCOME_DEST, focusService) {
+          StateGraphLayoutService, PLACEHOLDER_OUTCOME_DEST, focusService,
+          editorFirstTimeEventsService) {
         $scope.$on('saveOutcomeDestDetails', function() {
           // Create new state if specified.
-          if ($scope.outcome.dest == PLACEHOLDER_OUTCOME_DEST) {
+          if ($scope.outcome.dest === PLACEHOLDER_OUTCOME_DEST) {
+            editorFirstTimeEventsService.registerFirstCreateSecondStateEvent();
+
             var newStateName = $scope.outcome.newStateName;
             $scope.outcome.dest = newStateName;
             delete $scope.outcome.newStateName;
@@ -50,7 +52,7 @@ oppia.directive('outcomeDestinationEditor', [function() {
         };
 
         $scope.isCreatingNewState = function(outcome) {
-          return outcome.dest == PLACEHOLDER_OUTCOME_DEST;
+          return outcome.dest === PLACEHOLDER_OUTCOME_DEST;
         };
 
         $scope.newStateNamePattern = /^[a-zA-Z0-9.\s-]+$/;

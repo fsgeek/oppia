@@ -14,8 +14,6 @@
 
 /**
  * @fileoverview Directives for reusable data visualization components.
- *
- * @author sll@google.com (Sean Lip)
  */
 
 // Service for computing layout of state graph nodes.
@@ -418,7 +416,7 @@ oppia.factory('StateGraphLayoutService', [
           queue.shift();
 
           for (var i = 0; i < links.length; i++) {
-            if (links[i].target == currNodeId &&
+            if (links[i].target === currNodeId &&
                 !nodeData[links[i].source].reachableFromEnd) {
               nodeData[links[i].source].reachableFromEnd = true;
               queue.push(links[i].source);

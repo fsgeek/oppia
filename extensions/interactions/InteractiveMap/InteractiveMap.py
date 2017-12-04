@@ -23,7 +23,7 @@ class InteractiveMap(base.BaseInteraction):
     name = 'World Map'
     description = 'Allows learners to specify a position on a world map.'
     display_mode = base.DISPLAY_MODE_SUPPLEMENTAL
-    is_trainable = True
+    is_trainable = False
     _dependency_ids = ['google_maps']
     answer_type = 'CoordTwoDim'
     instructions = 'Click on the map'
@@ -66,3 +66,23 @@ class InteractiveMap(base.BaseInteraction):
         },
         'default_value': 0.0,
     }]
+
+    _answer_visualization_specs = [{
+        # Table with answer counts for top N answers.
+        'id': 'FrequencyTable',
+        'options': {
+            'column_headers': ['Answer', 'Count'],
+            'title': 'Top 5 answers'
+        },
+        'calculation_id': 'Top5AnswerFrequencies',
+    }, {
+        # Table with answer counts.
+        'id': 'FrequencyTable',
+        'options': {
+            'column_headers': ['Answer', 'Count'],
+            'title': 'All answers'
+        },
+        'calculation_id': 'AnswerFrequencies',
+    }]
+
+    _auxiliary_calculation_ids = ['TopAnswersByCategorization']

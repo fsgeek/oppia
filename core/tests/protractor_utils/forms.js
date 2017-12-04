@@ -15,8 +15,6 @@
 /**
  * @fileoverview Utilities for interacting with forms when carrrying
  * out end-to-end testing with protractor.
- *
- * @author Jacob Davis (jacobdavis11@gmail.com)
  */
 
 var interactions = require('../../../extensions/interactions/protractor.js');
@@ -39,10 +37,11 @@ var DictionaryEditor = function(elem) {
 var ListEditor = function(elem) {
   // NOTE: this returns a promise, not an integer.
   var _getLength = function() {
-    return elem.all(by.repeater('item in localValue track by $index')).
-        then(function(items) {
-      return items.length;
-    });
+    return elem.all(by.repeater('item in localValue track by $index'))
+      .then(function(items) {
+        return items.length;
+      }
+    );
   };
   // If objectType is specified this returns an editor for objects of that type
   // which can be used to make changes to the newly-added item (for example
@@ -135,11 +134,6 @@ var RichTextEditor = function(elem) {
       _appendContentText(text);
       _clickToolbarButton('italics');
     },
-    appendUnderlineText: function(text) {
-      _clickToolbarButton('underline');
-      _appendContentText(text);
-      _clickToolbarButton('underline');
-    },
     appendOrderedList: function(textArray) {
       _appendContentText('\n');
       _clickToolbarButton('ol');
@@ -177,9 +171,9 @@ var RichTextEditor = function(elem) {
         by.css('.protractor-test-close-rich-text-component-editor')).click();
       general.waitForSystem();
 
-      // Refocus back into the RTE.
-      elem.all(by.model('html')).first().click();
-      elem.all(by.model('html')).first().sendKeys(protractor.Key.END);
+      // Ensure that the cursor is at the end of the RTE.
+      elem.all(by.model('html')).first().sendKeys(
+        protractor.Key.chord(protractor.Key.CONTROL, protractor.Key.END));
     }
   };
 };
@@ -224,16 +218,17 @@ var AutocompleteMultiDropdownEditor = function(elem) {
     setValues: function(texts) {
       // Clear all existing choices.
       elem.element(by.css('.select2-choices'))
-          .all(by.tagName('li')).map(function(choiceElem) {
-        return choiceElem.element(by.css('.select2-search-choice-close'));
-      }).then(function(deleteButtons) {
-        // We iterate in descending order, because clicking on a delete button
-        // removes the element from the DOM. We also omit the last element
-        // because it is the field for new input.
-        for (var i = deleteButtons.length - 2; i >= 0; i--) {
-          deleteButtons[i].click();
+        .all(by.tagName('li')).map(function(choiceElem) {
+          return choiceElem.element(by.css('.select2-search-choice-close'));
+        }).then(function(deleteButtons) {
+          // We iterate in descending order, because clicking on a delete button
+          // removes the element from the DOM. We also omit the last element
+          // because it is the field for new input.
+          for (var i = deleteButtons.length - 2; i >= 0; i--) {
+            deleteButtons[i].click();
+          }
         }
-      });
+      );
 
       for (var i = 0; i < texts.length; i++) {
         elem.element(by.css('.select2-container')).click();
@@ -242,14 +237,15 @@ var AutocompleteMultiDropdownEditor = function(elem) {
     },
     expectCurrentSelectionToBe: function(expectedCurrentSelection) {
       elem.element(by.css('.select2-choices'))
-          .all(by.tagName('li')).map(function(choiceElem) {
-        return choiceElem.getText();
-      }).then(function(actualSelection) {
-        // Remove the element corresponding to the last <li>, which actually
-        // corresponds to the field for new input.
-        actualSelection.pop();
-        expect(actualSelection).toEqual(expectedCurrentSelection);
-      });
+        .all(by.tagName('li')).map(function(choiceElem) {
+          return choiceElem.getText();
+        }).then(function(actualSelection) {
+          // Remove the element corresponding to the last <li>, which actually
+          // corresponds to the field for new input.
+          actualSelection.pop();
+          expect(actualSelection).toEqual(expectedCurrentSelection);
+        }
+      );
     }
   };
 };
@@ -262,7 +258,7 @@ var MultiSelectEditor = function(elem) {
     // Open the dropdown menu.
     elem.element(by.css('.dropdown-toggle')).click();
 
-    elem.element(by.css('.dropdown-menu')).all(by.tagName('li')).filter(
+    elem.element(by.css('.dropdown-menu')).all(by.tagName('span')).filter(
       function(choiceElem) {
         return choiceElem.getText().then(function(choiceText) {
           return texts.indexOf(choiceText) !== -1;
@@ -280,6 +276,9 @@ var MultiSelectEditor = function(elem) {
         expect(filteredElements[i].getAttribute('class')).toMatch(
           expectedClassBeforeToggle);
         filteredElements[i].click();
+        // Reopen the dropdown menu, since it closes after an item is
+        // toggled.
+        elem.element(by.css('.dropdown-toggle')).click();
       }
 
       // Close the dropdown menu at the end.
@@ -302,14 +301,15 @@ var MultiSelectEditor = function(elem) {
 
       // Find the selected elements.
       elem.element(by.css('.dropdown-menu'))
-          .all(by.css('.protractor-test-selected')).map(function(selectedElem) {
-        return selectedElem.getText();
-      }).then(function(actualSelection) {
-        expect(actualSelection).toEqual(expectedCurrentSelection);
+        .all(by.css('.protractor-test-selected')).map(function(selectedElem) {
+          return selectedElem.getText();
+        }).then(function(actualSelection) {
+          expect(actualSelection).toEqual(expectedCurrentSelection);
 
-        // Close the dropdown menu at the end.
-        elem.element(by.css('.dropdown-toggle')).click();
-      });
+          // Close the dropdown menu at the end.
+          elem.element(by.css('.dropdown-toggle')).click();
+        }
+      );
     }
   };
 };
@@ -330,9 +330,13 @@ var MultiSelectEditor = function(elem) {
 //   handler.readRteComponent('Math', ...);
 var expectRichText = function(elem) {
   var toMatch = function(richTextInstructions) {
-    // We remove all <p> elements since these are plain text that is
-    // sometimes represented just by text nodes.
-    elem.all(by.xpath('./*[not(self::p)]')).map(function(entry) {
+    // We select all top-level non-paragraph elements, as well as all children
+    // of paragraph elements. (Note that it is possible for <p> elements to
+    // surround, e.g., <i> tags, so we can't just ignore the <p> elements
+    // altogether.)
+    var XPATH_SELECTOR = './p/*|./*[not(self::p)]';
+
+    elem.all(by.xpath(XPATH_SELECTOR)).map(function(entry) {
       // It is necessary to obtain the texts of the elements in advance since
       // applying .getText() while the RichTextChecker is running would be
       // asynchronous and so not allow us to update the textPointer
@@ -342,7 +346,7 @@ var expectRichText = function(elem) {
       });
     }).then(function(arrayOfTexts) {
       // We re-derive the array of elements as we need it too.
-      elem.all(by.xpath('./*[not(self::p)]')).then(function(arrayOfElements) {
+      elem.all(by.xpath(XPATH_SELECTOR)).then(function(arrayOfElements) {
         elem.getText().then(function(fullText) {
           var checker = RichTextChecker(
             arrayOfElements, arrayOfTexts, fullText);
@@ -385,7 +389,9 @@ var RichTextChecker = function(arrayOfElems, arrayOfTexts, fullText) {
 
   var _readFormattedText = function(text, tagName) {
     expect(arrayOfElems[arrayPointer].getTagName()).toBe(tagName);
-    expect(arrayOfElems[arrayPointer].getInnerHtml()).toBe(text);
+    expect(
+      arrayOfElems[arrayPointer].getAttribute('innerHTML')
+      ).toBe(text);
     expect(arrayOfTexts[arrayPointer]).toEqual(text);
     arrayPointer = arrayPointer + 1;
     textPointer = textPointer + text.length;
@@ -406,9 +412,6 @@ var RichTextChecker = function(arrayOfElems, arrayOfTexts, fullText) {
     },
     readItalicText: function(text) {
       _readFormattedText(text, 'i');
-    },
-    readUnderlineText: function(text) {
-      _readFormattedText(text, 'u');
     },
     // TODO(Jacob): add functions for other rich text components.
     // Additional arguments may be sent to this function, and they will be
@@ -495,26 +498,28 @@ var CodeMirrorChecker = function(elem) {
     general.waitForSystem();
     elem.all(by.xpath('./div')).map(function(lineElement) {
       return lineElement.element(by.css('.CodeMirror-linenumber')).getText()
-          .then(function(lineNumber) {
-        // Note: the last line in codemirror will have an empty string for line
-        // number and for text. This is to skip that line.
-        if (lineNumber == '') {
+        .then(function(lineNumber) {
+          // Note: the last line in codemirror will have an empty string for
+          // line number and for text. This is to skip that line.
+          if (lineNumber === '') {
+            return lineNumber;
+          }
+          if (!compareDict.hasOwnProperty(lineNumber)) {
+            throw Error('Line ' + lineNumber + ' not found in CodeMirror');
+          }
+          expect(lineElement.element(by.xpath('./pre')).getText())
+            .toEqual(compareDict[lineNumber].text);
+          expect(
+            lineElement.element(
+              by.css('.CodeMirror-linebackground')).isPresent())
+            .toEqual(compareDict[lineNumber].highlighted);
+          compareDict[lineNumber].checked = true;
           return lineNumber;
         }
-        if (!compareDict.hasOwnProperty(lineNumber)) {
-          throw Error('Line ' + lineNumber + ' not found in CodeMirror');
-        }
-        expect(lineElement.element(by.xpath('./pre')).getText())
-          .toEqual(compareDict[lineNumber].text);
-        expect(
-          lineElement.element(by.css('.CodeMirror-linebackground')).isPresent())
-          .toEqual(compareDict[lineNumber].highlighted);
-        compareDict[lineNumber].checked = true;
-        return lineNumber;
-      });
+      );
     }).then(function(lineNumbers) {
       var largestLineNumber = lineNumbers[lineNumbers.length - 1];
-      if (largestLineNumber != currentLineNumber) {
+      if (largestLineNumber !== currentLineNumber) {
         _compareTextAndHighlightingFromLine(
           largestLineNumber,
           scrollTo + CODEMIRROR_SCROLL_AMOUNT_IN_PIXELS,

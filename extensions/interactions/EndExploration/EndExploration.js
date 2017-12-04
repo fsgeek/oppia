@@ -27,11 +27,11 @@ oppia.directive('oppiaInteractiveEndExploration', [function() {
     controller: [
       '$scope', '$http', '$attrs', '$q', 'urlService',
       'explorationContextService', 'PAGE_CONTEXT', 'EDITOR_TAB_CONTEXT',
-      'oppiaHtmlEscaper',
+      'oppiaHtmlEscaper', 'EXPLORATION_SUMMARY_DATA_URL_TEMPLATE',
       function(
           $scope, $http, $attrs, $q, urlService,
           explorationContextService, PAGE_CONTEXT, EDITOR_TAB_CONTEXT,
-          oppiaHtmlEscaper) {
+          oppiaHtmlEscaper, EXPLORATION_SUMMARY_DATA_URL_TEMPLATE) {
         var authorRecommendedExplorationIds = (
           oppiaHtmlEscaper.escapedJsonToObj(
             $attrs.recommendedExplorationIdsWithValue));
@@ -47,7 +47,9 @@ oppia.directive('oppiaInteractiveEndExploration', [function() {
             EDITOR_TAB_CONTEXT.EDITOR);
 
         $scope.collectionId = GLOBALS.collectionId;
-        $scope.collectionTitle = GLOBALS.collectionTitle;
+        $scope.getCollectionTitle = function() {
+          return GLOBALS.collectionTitle;
+        };
 
         $scope.errorMessage = '';
 
@@ -55,12 +57,13 @@ oppia.directive('oppiaInteractiveEndExploration', [function() {
           // Display a message if any author-recommended explorations are
           // invalid.
           var explorationId = explorationContextService.getExplorationId();
-          $http.get('/explorationsummarieshandler/data', {
+          $http.get(EXPLORATION_SUMMARY_DATA_URL_TEMPLATE, {
             params: {
               stringified_exp_ids: JSON.stringify(
                 authorRecommendedExplorationIds)
             }
-          }).success(function(data) {
+          }).then(function(response) {
+            var data = response.data;
             var foundExpIds = [];
             data.summaries.map(function(expSummary) {
               foundExpIds.push(expSummary.id);
@@ -103,4 +106,8 @@ oppia.directive('oppiaShortResponseEndExploration', [function() {
     scope: {},
     templateUrl: 'shortResponse/EndExploration'
   };
+}]);
+
+oppia.factory('endExplorationRulesService', [function() {
+  return {};
 }]);

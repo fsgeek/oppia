@@ -14,31 +14,31 @@
 
 /**
  * @fileoverview Directive for the rule type selector.
- *
- * @author sll@google.com (Sean Lip)
  */
 
 oppia.directive('ruleTypeSelector', [function() {
   return {
     restrict: 'E',
     scope: {
-      localValue: '=',
+      localValue: '@',
       onSelectionChange: '&'
     },
     template: '<input type="hidden">',
     controller: [
       '$scope', '$element', '$rootScope', '$filter',
-      'stateInteractionIdService', 'INTERACTION_SPECS', 'FUZZY_RULE_TYPE',
+      'stateInteractionIdService', 'INTERACTION_SPECS',
+      'RULE_TYPE_CLASSIFIER',
       function(
           $scope, $element, $rootScope, $filter,
-          stateInteractionIdService, INTERACTION_SPECS, FUZZY_RULE_TYPE) {
+          stateInteractionIdService, INTERACTION_SPECS,
+          RULE_TYPE_CLASSIFIER) {
         var choices = [];
         var numberOfRuleTypes = 0;
 
         var ruleTypesToDescriptions = INTERACTION_SPECS[
           stateInteractionIdService.savedMemento].rule_descriptions;
         for (var ruleType in ruleTypesToDescriptions) {
-          if (ruleType == FUZZY_RULE_TYPE) {
+          if (ruleType === RULE_TYPE_CLASSIFIER) {
             continue;
           }
           numberOfRuleTypes++;
@@ -62,12 +62,6 @@ oppia.directive('ruleTypeSelector', [function() {
           }
         });
 
-        // Select the first choice by default.
-        if (!$scope.localValue) {
-          $scope.localValue = choices[0].id;
-          $scope.onSelectionChange()($scope.localValue);
-        }
-
         var select2Node = $element[0].firstChild;
         $(select2Node).select2({
           allowClear: false,
@@ -80,18 +74,20 @@ oppia.directive('ruleTypeSelector', [function() {
           }
         });
 
+        // Select the first choice by default.
+        if (!$scope.localValue) {
+          $scope.localValue = choices[0].id;
+          $scope.onSelectionChange()($scope.localValue);
+        }
+
         // Initialize the dropdown.
         $(select2Node).select2('val', $scope.localValue);
 
-        // Update $scope.localValue when the selection changes.
         $(select2Node).on('change', function(e) {
-          $scope.localValue = e.val;
-          // This is needed to actually update the localValue in the containing
-          // scope.
-          $scope.$apply();
           $scope.onSelectionChange()(e.val);
-          // This is needed to propagate the change and display input fields for
-          // parameterizing the rule.
+          // This is needed to propagate the change and display input fields
+          // for parameterizing the rule. Otherwise, the input fields do not
+          // get updated when the rule type is changed.
           $scope.$apply();
         });
       }

@@ -20,6 +20,7 @@ import copy
 import os
 
 import feconf
+import jinja_utils
 import schema_utils
 import utils
 
@@ -40,6 +41,9 @@ class BaseObject(object):
     description = ''
     edit_html_filename = None
     edit_js_filename = None
+    # This should be non-null if the object class is used when specifying a
+    # rule.
+    default_value = None
 
     @classmethod
     def normalize(cls, raw):
@@ -74,9 +78,10 @@ class BaseObject(object):
             raise Exception(
                 'There is no editor template defined for objects of type %s' %
                 cls.__name__)
-        return utils.get_file_contents(os.path.join(
+        html_templates = utils.get_file_contents(os.path.join(
             os.getcwd(), feconf.OBJECT_TEMPLATES_DIR,
             '%s.html' % cls.edit_html_filename))
+        return jinja_utils.interpolate_cache_slug('%s' % html_templates)
 
 
 class Boolean(BaseObject):
@@ -105,6 +110,7 @@ class Real(BaseObject):
     description = 'A real number.'
     edit_html_filename = 'real_editor'
     edit_js_filename = 'RealEditor'
+    default_value = 0.0
 
     SCHEMA = {
         'type': 'float'
@@ -117,6 +123,7 @@ class Int(BaseObject):
     description = 'An integer.'
     edit_html_filename = 'int_editor'
     edit_js_filename = 'IntEditor'
+    default_value = 0
 
     SCHEMA = {
         'type': 'int'
@@ -129,6 +136,7 @@ class UnicodeString(BaseObject):
     description = 'A unicode string.'
     edit_html_filename = 'unicode_string_editor'
     edit_js_filename = 'UnicodeStringEditor'
+    default_value = ''
 
     SCHEMA = {
         'type': 'unicode',
@@ -153,6 +161,7 @@ class NonnegativeInt(BaseObject):
     description = 'A non-negative integer.'
     edit_html_filename = 'nonnegative_int_editor'
     edit_js_filename = 'NonnegativeIntEditor'
+    default_value = 0
 
     SCHEMA = {
         'type': 'int',
@@ -171,6 +180,7 @@ class CodeString(BaseObject):
     description = 'A code string.'
     edit_html_filename = 'code_string_editor'
     edit_js_filename = 'CodeStringEditor'
+    default_value = ''
 
     SCHEMA = {
         'type': 'unicode',
@@ -227,6 +237,7 @@ class CoordTwoDim(BaseObject):
     description = 'A two-dimensional coordinate (a pair of reals).'
     edit_html_filename = 'coord_two_dim_editor'
     edit_js_filename = 'CoordTwoDimEditor'
+    default_value = [0.0, 0.0]
 
     SCHEMA = {
         'type': 'list',
@@ -239,6 +250,7 @@ class ListOfCoordTwoDim(BaseObject):
     """Class for lists of CoordTwoDims."""
 
     description = 'A list of 2D coordinates.'
+    default_value = []
 
     SCHEMA = {
         'type': 'list',
@@ -265,6 +277,7 @@ class SetOfUnicodeString(BaseObject):
     description = 'A set (a list with unique elements) of unicode strings.'
     edit_html_filename = 'list_editor'
     edit_js_filename = 'SetOfUnicodeStringEditor'
+    default_value = []
 
     SCHEMA = {
         'type': 'list',
@@ -281,6 +294,7 @@ class NormalizedString(BaseObject):
     description = 'A unicode string with adjacent whitespace collapsed.'
     edit_html_filename = 'unicode_string_editor'
     edit_js_filename = 'NormalizedStringEditor'
+    default_value = ''
 
     SCHEMA = {
         'type': 'unicode',
@@ -295,6 +309,7 @@ class SetOfNormalizedString(BaseObject):
 
     description = (
         'A set (a list with unique elements) of whitespace-collapsed strings.')
+    default_value = []
 
     SCHEMA = {
         'type': 'list',
@@ -337,6 +352,7 @@ class MusicPhrase(BaseObject):
                    'and time signature.')
     edit_html_filename = 'music_phrase_editor'
     edit_js_filename = 'MusicPhraseEditor'
+    default_value = []
 
     # The maximum number of notes allowed in a music phrase.
     _MAX_NOTES_IN_PHRASE = 8
@@ -460,6 +476,7 @@ class LogicErrorCategory(BaseObject):
     description = 'One of the possible error categories of a logic proof.'
     edit_html_filename = 'logic_error_category_editor'
     edit_js_filename = 'LogicErrorCategoryEditor'
+    default_value = 'mistake'
 
     SCHEMA = {
         'type': 'unicode',
@@ -476,6 +493,13 @@ class Graph(BaseObject):
     description = 'A (mathematical) graph'
     edit_html_filename = 'graph_editor'
     edit_js_filename = 'GraphEditor'
+    default_value = {
+        'edges': [],
+        'isDirected': False,
+        'isLabeled': False,
+        'isWeighted': False,
+        'vertices': []
+    }
 
     _VERTEX_SCHEMA = {
         'type': 'dict',
@@ -572,6 +596,7 @@ class GraphProperty(BaseObject):
     description = 'One of the possible properties possessed by a graph.'
     edit_html_filename = 'graph_property_editor'
     edit_js_filename = 'GraphPropertyEditor'
+    default_value = 'strongly_connected'
 
     SCHEMA = {
         'type': 'unicode',
@@ -585,6 +610,7 @@ class ListOfGraph(BaseObject):
     """Class for lists of Graphs."""
 
     description = 'A list of graphs.'
+    default_value = []
 
     SCHEMA = {
         'type': 'list',
@@ -726,6 +752,7 @@ class SetOfHtmlString(BaseObject):
     description = "A list of Html strings."
     edit_html_filename = 'set_of_html_string_editor'
     edit_js_filename = 'SetOfHtmlStringEditor'
+    default_value = []
 
     SCHEMA = {
         'type': 'list',

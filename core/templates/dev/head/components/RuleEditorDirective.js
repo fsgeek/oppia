@@ -14,8 +14,6 @@
 
 /**
  * @fileoverview Directive for the rule editor.
- *
- * @author sll@google.com (Sean Lip)
  */
 
 // This directive controls an editor for selecting the type and input parameters
@@ -37,24 +35,26 @@ oppia.directive('ruleEditor', ['$log', function($log) {
       '$scope', '$timeout', 'editorContextService',
       'explorationStatesService', 'routerService', 'validatorsService',
       'responsesService', 'stateInteractionIdService', 'INTERACTION_SPECS',
-      'FUZZY_RULE_TYPE', function(
+      'RULE_TYPE_CLASSIFIER', function(
           $scope, $timeout, editorContextService,
           explorationStatesService, routerService, validatorsService,
           responsesService, stateInteractionIdService, INTERACTION_SPECS,
-          FUZZY_RULE_TYPE) {
+          RULE_TYPE_CLASSIFIER) {
+        var DEFAULT_OBJECT_VALUES = GLOBALS.DEFAULT_OBJECT_VALUES;
+
         $scope.currentInteractionId = stateInteractionIdService.savedMemento;
         $scope.editRuleForm = {};
 
         // This returns the rule description string.
         var computeRuleDescriptionFragments = function() {
-          if (!$scope.rule.rule_type) {
+          if (!$scope.rule.type) {
             $scope.ruleDescriptionFragments = [];
             return '';
           }
 
           var ruleDescription = (
             INTERACTION_SPECS[$scope.currentInteractionId].rule_descriptions[
-              $scope.rule.rule_type]);
+              $scope.rule.type]);
 
           var PATTERN = /\{\{\s*(\w+)\s*\|\s*(\w+)\s*\}\}/;
           var finalInputArray = ruleDescription.split(PATTERN);
@@ -69,7 +69,7 @@ oppia.directive('ruleEditor', ['$log', function($log) {
               text: i !== 0 ? finalInputArray[i] : '',
               type: 'noneditable'
             });
-            if (i == finalInputArray.length - 1) {
+            if (i === finalInputArray.length - 1) {
               break;
             }
 
@@ -82,24 +82,26 @@ oppia.directive('ruleEditor', ['$log', function($log) {
               if (answerChoices.length > 0) {
                 if (finalInputArray[2] === 'SetOfHtmlString') {
                   $scope.ruleDescriptionChoices = answerChoices.map(
-                      function(choice) {
-                    return {
-                      id: choice.label,
-                      val: choice.label
-                    };
-                  });
+                    function(choice) {
+                      return {
+                        id: choice.label,
+                        val: choice.label
+                      };
+                    }
+                  );
                   result.push({
                     type: 'checkboxes',
                     varName: finalInputArray[i + 1]
                   });
                 } else {
                   $scope.ruleDescriptionChoices = answerChoices.map(
-                      function(choice) {
-                    return {
-                      id: choice.val,
-                      val: choice.label
-                    };
-                  });
+                    function(choice) {
+                      return {
+                        id: choice.val,
+                        val: choice.label
+                      };
+                    }
+                  );
                   result.push({
                     type: 'select',
                     varName: finalInputArray[i + 1]
@@ -143,8 +145,13 @@ oppia.directive('ruleEditor', ['$log', function($log) {
         });
 
         $scope.onSelectNewRuleType = function(newRuleType) {
-          $scope.rule.rule_type = newRuleType;
+          var oldRuleInputs = angular.copy($scope.rule.inputs) || {};
+          var oldRuleInputTypes = angular.copy($scope.rule.inputTypes) || {};
+
+          $scope.rule.type = newRuleType;
           $scope.rule.inputs = {};
+          $scope.rule.inputTypes = {};
+
           var tmpRuleDescription = computeRuleDescriptionFragments();
           // This provides the list of choices for the multiple-choice and
           // image-click interactions.
@@ -161,30 +168,34 @@ oppia.directive('ruleEditor', ['$log', function($log) {
             if (tmpRuleDescription.match(PATTERN)[2]) {
               varType = tmpRuleDescription.match(PATTERN)[2].substring(1);
             }
+            $scope.rule.inputTypes[varName] = varType;
 
-            if (varType === 'SetOfHtmlString' ||
-                varType === 'SetOfUnicodeString') {
+            // TODO(sll): Find a more robust way of doing this. For example,
+            // we could associate a particular varName with answerChoices
+            // depending on the interaction. This varName would take its
+            // default value from answerChoices, but other variables would
+            // take their default values from the DEFAULT_OBJECT_VALUES dict.
+            if (angular.equals(DEFAULT_OBJECT_VALUES[varType], [])) {
               $scope.rule.inputs[varName] = [];
             } else if (answerChoices) {
               $scope.rule.inputs[varName] = angular.copy(answerChoices[0].val);
-            } else if (varType == 'Graph') {
-              $scope.rule.inputs[varName] = {
-                edges: [],
-                isDirected: false,
-                isLabeled: false,
-                isWeighted: false,
-                vertices: []
-              };
             } else {
-              $scope.rule.inputs[varName] = '';
+              $scope.rule.inputs[varName] = DEFAULT_OBJECT_VALUES[varType];
             }
 
             tmpRuleDescription = tmpRuleDescription.replace(PATTERN, ' ');
           }
+
+          for (var key in $scope.rule.inputs) {
+            if (oldRuleInputs.hasOwnProperty(key) &&
+              oldRuleInputTypes[key] === $scope.rule.inputTypes[key]) {
+              $scope.rule.inputs[key] = oldRuleInputs[key];
+            }
+          }
         };
 
         $scope.onDeleteTrainingDataEntry = function(index) {
-          if ($scope.rule.rule_type === FUZZY_RULE_TYPE) {
+          if ($scope.rule.type === RULE_TYPE_CLASSIFIER) {
             var trainingData = $scope.rule.inputs.training_data;
             if (index < trainingData.length) {
               trainingData.splice(index, 1);
@@ -202,8 +213,8 @@ oppia.directive('ruleEditor', ['$log', function($log) {
 
         $scope.init = function() {
           // Select a default rule type, if one isn't already selected.
-          if ($scope.rule.rule_type === null) {
-            $scope.onSelectNewRuleType($scope.rule.rule_type);
+          if ($scope.rule.type === null) {
+            $scope.onSelectNewRuleType($scope.rule.type);
           }
           computeRuleDescriptionFragments();
         };

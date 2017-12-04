@@ -14,76 +14,119 @@
 
 /**
  * @fileoverview Initialization and basic configuration for the Oppia module.
- *
- * @author sll@google.com (Sean Lip)
  */
-
 // TODO(sll): Remove the check for window.GLOBALS. This check is currently
 // only there so that the Karma tests run, since it looks like Karma doesn't
 // 'see' the GLOBALS variable that is defined in base.html. We should fix this
 // in order to make the testing and production environments match.
 var oppia = angular.module(
   'oppia', [
-    'ngMaterial', 'ngAnimate', 'ngSanitize', 'ngResource', 'ui.bootstrap',
-    'ui.sortable', 'infinite-scroll', 'ngJoyRide', 'ngImgCrop', 'ui.validate',
-    'textAngular'
+    'ngMaterial', 'ngAnimate', 'ngSanitize', 'ngTouch', 'ngResource',
+    'ui.bootstrap', 'ui.sortable', 'infinite-scroll', 'ngJoyRide', 'ngImgCrop',
+    'ui.validate', 'textAngular', 'pascalprecht.translate', 'ngCookies',
+    'toastr'
   ].concat(
-    window.GLOBALS ? (window.GLOBALS.ADDITIONAL_ANGULAR_MODULES || [])
-                   : []));
+    window.GLOBALS ? (window.GLOBALS.ADDITIONAL_ANGULAR_MODULES || []) : []));
 
-// Set the AngularJS interpolators as <[ and ]>, to not conflict with Jinja2
-// templates.
-// Set default headers for POST and PUT requests.
-// Add an interceptor to convert requests to strings and to log and show
-// warnings for error responses.
-oppia.config(['$interpolateProvider', '$httpProvider',
-    function($interpolateProvider, $httpProvider) {
-  $interpolateProvider.startSymbol('<[');
-  $interpolateProvider.endSymbol(']>');
+for (var constantName in constants) {
+  oppia.constant(constantName, constants[constantName]);
+}
 
-  $httpProvider.defaults.headers.post = {
-    'Content-Type': 'application/x-www-form-urlencoded'
-  };
-  $httpProvider.defaults.headers.put = {
-    'Content-Type': 'application/x-www-form-urlencoded'
-  };
+oppia.constant(
+  'EXPLORATION_SUMMARY_DATA_URL_TEMPLATE', '/explorationsummarieshandler/data');
 
-  $httpProvider.interceptors.push([
-    '$q', '$log', 'warningsData', function($q, $log, warningsData) {
-      return {
-        request: function(config) {
-          // If this request carries data (in the form of a JS object),
-          // JSON-stringify it and store it under 'payload'.
-          if (config.data) {
-            config.data = $.param({
-              csrf_token: GLOBALS.csrf_token,
-              payload: JSON.stringify(config.data),
-              source: document.URL
-            }, true);
-          }
-          return config;
-        },
-        responseError: function(rejection) {
-          // A rejection status of -1 seems to indicate (it's hard to find
-          // documentation) that the response has not completed,
-          // which can occur if the user navigates away from the page
-          // while the response is pending, This should not be considered
-          // an error.
-          if (rejection.status !== -1) {
-            $log.error(rejection.data);
+// We use a slash because this character is forbidden in a state name.
+oppia.constant('PLACEHOLDER_OUTCOME_DEST', '/');
+oppia.constant('INTERACTION_DISPLAY_MODE_INLINE', 'inline');
+oppia.constant('RULE_TYPE_CLASSIFIER', 'FuzzyMatches');
+oppia.constant('OBJECT_EDITOR_URL_PREFIX', '/object_editor_template/');
+// Feature still in development.
+// NOTE TO DEVELOPERS: This should be synchronized with the value in feconf.
+oppia.constant('ENABLE_STRING_CLASSIFIER', false);
 
-            var warningMessage = 'Error communicating with server.';
-            if (rejection.data && rejection.data.error) {
-              warningMessage = rejection.data.error;
-            }
-            warningsData.addWarning(warningMessage);
-          }
-          return $q.reject(rejection);
-        }
-      };
+oppia.constant('PARAMETER_TYPES', {
+  REAL: 'Real',
+  UNICODE_STRING: 'UnicodeString'
+});
+
+// The maximum number of nodes to show in a row of the state graph.
+oppia.constant('MAX_NODES_PER_ROW', 4);
+// The following variable must be at least 3. It represents the maximum length,
+// in characters, for the name of each node label in the state graph.
+oppia.constant('MAX_NODE_LABEL_LENGTH', 15);
+
+// If an $http request fails with the following error codes, a warning is
+// displayed.
+oppia.constant('FATAL_ERROR_CODES', [400, 401, 404, 500]);
+
+oppia.constant('EVENT_ACTIVE_CARD_CHANGED', 'activeCardChanged');
+
+oppia.config([
+  '$compileProvider', '$httpProvider', '$interpolateProvider',
+  '$locationProvider',
+  function(
+      $compileProvider, $httpProvider, $interpolateProvider,
+      $locationProvider) {
+    // This improves performance by disabling debug data. For more details,
+    // see https://code.angularjs.org/1.5.5/docs/guide/production
+    $compileProvider.debugInfoEnabled(false);
+
+    // Set the AngularJS interpolators as <[ and ]>, to not conflict with
+    // Jinja2 templates.
+    $interpolateProvider.startSymbol('<[');
+    $interpolateProvider.endSymbol(']>');
+
+    // Prevent the search page from reloading if the search query is changed.
+    $locationProvider.html5Mode(false);
+    if (window.location.pathname === '/search/find') {
+      $locationProvider.html5Mode(true);
     }
-  ]);
-}]);
+
+    // Set default headers for POST and PUT requests.
+    $httpProvider.defaults.headers.post = {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    };
+    $httpProvider.defaults.headers.put = {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    };
+
+    // Add an interceptor to convert requests to strings and to log and show
+    // warnings for error responses.
+    $httpProvider.interceptors.push([
+      '$q', '$log', 'alertsService', function($q, $log, alertsService) {
+        return {
+          request: function(config) {
+            if (config.data) {
+              config.data = $.param({
+                csrf_token: GLOBALS.csrf_token,
+                payload: JSON.stringify(config.data),
+                source: document.URL
+              }, true);
+            }
+            return config;
+          },
+          responseError: function(rejection) {
+            // A rejection status of -1 seems to indicate (it's hard to find
+            // documentation) that the response has not completed,
+            // which can occur if the user navigates away from the page
+            // while the response is pending, This should not be considered
+            // an error.
+            if (rejection.status !== -1) {
+              $log.error(rejection.data);
+
+              var warningMessage = 'Error communicating with server.';
+              if (rejection.data && rejection.data.error) {
+                warningMessage = rejection.data.error;
+              }
+              alertsService.addWarning(warningMessage);
+            }
+            return $q.reject(rejection);
+          }
+        };
+      }
+    ]);
+  }
+]);
 
 oppia.config(['$provide', function($provide) {
   $provide.decorator('$log', ['$delegate', function($delegate) {
@@ -107,12 +150,33 @@ oppia.config(['$provide', function($provide) {
   }]);
 }]);
 
+oppia.config(['toastrConfig', function(toastrConfig) {
+  angular.extend(toastrConfig, {
+    allowHtml: false,
+    iconClasses: {
+      error: 'toast-error',
+      info: 'toast-info',
+      success: 'toast-success',
+      warning: 'toast-warning'
+    },
+    positionClass: 'toast-bottom-right',
+    messageClass: 'toast-message',
+    progressBar: false,
+    tapToDismiss: true,
+    timeOut: 1500,
+    titleClass: 'toast-title'
+  });
+}]);
+
 // Returns true if the user is on a mobile device.
 // See: http://stackoverflow.com/a/14301832/5020618
 oppia.factory('deviceInfoService', ['$window', function($window) {
   return {
     isMobileDevice: function() {
       return typeof $window.orientation !== 'undefined';
+    },
+    isMobileUserAgent: function() {
+      return /Mobi/.test(navigator.userAgent);
     },
     hasTouchEvents: function() {
       return 'ontouchstart' in $window;
@@ -173,19 +237,19 @@ oppia.factory('oppiaHtmlEscaper', ['$log', function($log) {
     },
     unescapedStrToEscapedStr: function(str) {
       return String(str)
-                  .replace(/&/g, '&amp;')
-                  .replace(/"/g, '&quot;')
-                  .replace(/'/g, '&#39;')
-                  .replace(/</g, '&lt;')
-                  .replace(/>/g, '&gt;');
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
     },
     escapedStrToUnescapedStr: function(value) {
       return String(value)
-                  .replace(/&quot;/g, '"')
-                  .replace(/&#39;/g, '\'')
-                  .replace(/&lt;/g, '<')
-                  .replace(/&gt;/g, '>')
-                  .replace(/&amp;/g, '&');
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, '\'')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
     }
   };
   return htmlEscaper;
@@ -201,10 +265,10 @@ oppia.factory('oppiaDatetimeFormatter', ['$filter', function($filter) {
     // Otherwise, returns the full date (with the year abbreviated).
     getLocaleAbbreviatedDatetimeString: function(millisSinceEpoch) {
       var date = new Date(millisSinceEpoch);
-      if (date.toLocaleDateString() == new Date().toLocaleDateString()) {
+      if (date.toLocaleDateString() === new Date().toLocaleDateString()) {
         // The replace function removes 'seconds' from the time returned.
         return date.toLocaleTimeString().replace(/:\d\d /, ' ');
-      } else if (date.getFullYear() == new Date().getFullYear()) {
+      } else if (date.getFullYear() === new Date().getFullYear()) {
         return $filter('date')(date, 'MMM d');
       } else {
         return $filter('date')(date, 'shortDate');
@@ -226,65 +290,90 @@ oppia.factory('oppiaDatetimeFormatter', ['$filter', function($filter) {
 // Service for validating things and (optionally) displaying warning messages
 // if the validation fails.
 oppia.factory('validatorsService', [
-    '$filter', 'warningsData', function($filter, warningsData) {
-  return {
-    /**
-     * Checks whether an entity name is valid, and displays a warning message
-     * if it isn't.
-     * @param {string} input - The input to be checked.
-     * @param {boolean} showWarnings - Whether to show warnings in the
-     *   butterbar.
-     * @return {boolean} True if the entity name is valid, false otherwise.
-     */
-    isValidEntityName: function(input, showWarnings) {
-      input = $filter('normalizeWhitespace')(input);
-      if (!input) {
-        if (showWarnings) {
-          warningsData.addWarning('Please enter a non-empty name.');
-        }
-        return false;
-      }
-
-      for (var i = 0; i < GLOBALS.INVALID_NAME_CHARS.length; i++) {
-        if (input.indexOf(GLOBALS.INVALID_NAME_CHARS[i]) !== -1) {
+  '$filter', 'alertsService', function($filter, alertsService) {
+    return {
+      /**
+       * Checks whether an entity name is valid, and displays a warning message
+       * if it isn't.
+       * @param {string} input - The input to be checked.
+       * @param {boolean} showWarnings - Whether to show warnings in the
+       *   butterbar.
+       * @return {boolean} True if the entity name is valid, false otherwise.
+       */
+      isValidEntityName: function(input, showWarnings, allowEmpty) {
+        input = $filter('normalizeWhitespace')(input);
+        if (!input && !allowEmpty) {
           if (showWarnings) {
-            warningsData.addWarning(
-             'Invalid input. Please use a non-empty description consisting ' +
-             'of alphanumeric characters, spaces and/or hyphens.'
-            );
+            alertsService.addWarning('Please enter a non-empty name.');
           }
           return false;
         }
-      }
-      return true;
-    },
-    // NB: this does not check whether the card name already exists in the
-    // states dict.
-    isValidStateName: function(input, showWarnings) {
-      if (!this.isValidEntityName(input, showWarnings)) {
-        return false;
-      }
 
-      if (input.length > 50) {
-        if (showWarnings) {
-          warningsData.addWarning(
-            'Card names should be at most 50 characters long.');
+        for (var i = 0; i < GLOBALS.INVALID_NAME_CHARS.length; i++) {
+          if (input.indexOf(GLOBALS.INVALID_NAME_CHARS[i]) !== -1) {
+            if (showWarnings) {
+              alertsService.addWarning(
+               'Invalid input. Please use a non-empty description consisting ' +
+               'of alphanumeric characters, spaces and/or hyphens.'
+              );
+            }
+            return false;
+          }
         }
-        return false;
-      }
+        return true;
+      },
+      isValidExplorationTitle: function(input, showWarnings) {
+        if (!this.isValidEntityName(input, showWarnings)) {
+          return false;
+        }
 
-      return true;
-    },
-    isNonempty: function(input, showWarnings) {
-      if (!input) {
-        if (showWarnings) {
-          // TODO(sll): Allow this warning to be more specific in terms of what
-          // needs to be entered.
-          warningsData.addWarning('Please enter a non-empty value.');
+        if (input.length > 40) {
+          if (showWarnings) {
+            alertsService.addWarning(
+              'Exploration titles should be at most 40 characters long.');
+          }
+          return false;
         }
-        return false;
+
+        return true;
+      },
+      // NB: this does not check whether the card name already exists in the
+      // states dict.
+      isValidStateName: function(input, showWarnings) {
+        if (!this.isValidEntityName(input, showWarnings)) {
+          return false;
+        }
+
+        if (input.length > 50) {
+          if (showWarnings) {
+            alertsService.addWarning(
+              'Card names should be at most 50 characters long.');
+          }
+          return false;
+        }
+
+        return true;
+      },
+      isNonempty: function(input, showWarnings) {
+        if (!input) {
+          if (showWarnings) {
+            // TODO(sll): Allow this warning to be more specific in terms of
+            // what needs to be entered.
+            alertsService.addWarning('Please enter a non-empty value.');
+          }
+          return false;
+        }
+        return true;
       }
-      return true;
+    };
+  }
+]);
+
+// Service for generating random IDs.
+oppia.factory('IdGenerationService', [function() {
+  return {
+    generateNewId: function() {
+      return Math.random().toString(36).slice(2);
     }
   };
 }]);
@@ -297,7 +386,10 @@ oppia.constant('LABEL_FOR_CLEARING_FOCUS', 'labelForClearingFocus');
 // page.
 oppia.factory('focusService', [
   '$rootScope', '$timeout', 'deviceInfoService', 'LABEL_FOR_CLEARING_FOCUS',
-  function($rootScope, $timeout, deviceInfoService, LABEL_FOR_CLEARING_FOCUS) {
+  'IdGenerationService',
+  function(
+      $rootScope, $timeout, deviceInfoService, LABEL_FOR_CLEARING_FOCUS,
+      IdGenerationService) {
     var _nextLabelToFocusOn = null;
     return {
       clearFocus: function() {
@@ -321,7 +413,7 @@ oppia.factory('focusService', [
       },
       // Generates a random string (to be used as a focus label).
       generateFocusLabel: function() {
-        return Math.random().toString(36).slice(2);
+        return IdGenerationService.generateNewId();
       }
     };
   }
@@ -333,24 +425,44 @@ oppia.factory('urlService', ['$window', function($window) {
     getUrlParams: function() {
       var params = {};
       var parts = $window.location.href.replace(
-          /[?&]+([^=&]+)=([^&]*)/gi, function(m, key, value) {
-        params[key] = value;
-      });
+        /[?&]+([^=&]+)=([^&]*)/gi, function(m, key, value) {
+          params[key] = value;
+        }
+      );
       return params;
     },
     isIframed: function() {
-      return !!(this.getUrlParams().iframed);
+      var pathname = this.getPathname();
+      var urlParts = pathname.split('/');
+      return urlParts[1] === 'embed';
+    },
+    getPathname: function() {
+      return window.location.pathname;
     }
   };
 }]);
 
 // Service for computing the window dimensions.
 oppia.factory('windowDimensionsService', ['$window', function($window) {
+  var onResizeHooks = [];
+
+  $window.onresize = function() {
+    onResizeHooks.forEach(function(hookFn) {
+      hookFn();
+    });
+  };
   return {
     getWidth: function() {
       return (
         $window.innerWidth || document.documentElement.clientWidth ||
         document.body.clientWidth);
+    },
+    registerOnResizeHook: function(hookFn) {
+      onResizeHooks.push(hookFn);
+    },
+    isWindowNarrow: function() {
+      var NORMAL_NAVBAR_CUTOFF_WIDTH_PX = 768;
+      return this.getWidth() <= NORMAL_NAVBAR_CUTOFF_WIDTH_PX;
     }
   };
 }]);
@@ -388,17 +500,33 @@ oppia.factory('siteAnalyticsService', ['$window', function($window) {
       _sendEventToGoogleAnalytics(
         'LoginButton', 'click', $window.location.pathname + ' ' + srcElement);
     },
-    registerOpenExplorationCreationModalEvent: function() {
-      _sendEventToGoogleAnalytics(
-        'CreateExplorationModal', 'open', $window.location.pathname);
+    registerNewSignupEvent: function() {
+      _sendEventToGoogleAnalytics('SignupButton', 'click', '');
     },
-    registerPublishExplorationEvent: function(explorationId) {
+    registerClickBrowseLibraryButtonEvent: function() {
       _sendEventToGoogleAnalytics(
-        'PublishExploration', 'click', explorationId);
+        'BrowseLibraryButton', 'click', $window.location.pathname);
     },
-    registerCommitChangesToPublicExplorationEvent: function(explorationId) {
+    registerGoToDonationSiteEvent: function(donationSiteName) {
       _sendEventToGoogleAnalytics(
-        'CommitToPublicExploration', 'click', explorationId);
+        'GoToDonationSite', 'click', donationSiteName);
+    },
+    registerApplyToTeachWithOppiaEvent: function() {
+      _sendEventToGoogleAnalytics('ApplyToTeachWithOppia', 'click', '');
+    },
+    registerClickCreateExplorationButtonEvent: function() {
+      _sendEventToGoogleAnalytics(
+        'CreateExplorationButton', 'click', $window.location.pathname);
+    },
+    registerCreateNewExplorationEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics('NewExploration', 'create', explorationId);
+    },
+    registerCreateNewExplorationInCollectionEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'NewExplorationFromCollection', 'create', explorationId);
+    },
+    registerCreateNewCollectionEvent: function(collectionId) {
+      _sendEventToGoogleAnalytics('NewCollection', 'create', collectionId);
     },
     registerCommitChangesToPrivateExplorationEvent: function(explorationId) {
       _sendEventToGoogleAnalytics(
@@ -408,12 +536,109 @@ oppia.factory('siteAnalyticsService', ['$window', function($window) {
       _sendSocialEventToGoogleAnalytics(
         network, 'share', $window.location.pathname);
     },
+    registerShareCollectionEvent: function(network) {
+      _sendSocialEventToGoogleAnalytics(
+        network, 'share', $window.location.pathname);
+    },
     registerOpenEmbedInfoEvent: function(explorationId) {
       _sendEventToGoogleAnalytics('EmbedInfoModal', 'open', explorationId);
     },
-    registerCreateNewExplorationEvent: function(explorationId) {
+    registerCommitChangesToPublicExplorationEvent: function(explorationId) {
       _sendEventToGoogleAnalytics(
-        'NewExploration', 'create', explorationId);
+        'CommitToPublicExploration', 'click', explorationId);
+    },
+    // Metrics for tutorial on first creating exploration
+    registerTutorialModalOpenEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'TutorialModalOpen', 'open', explorationId);
+    },
+    registerDeclineTutorialModalEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'DeclineTutorialModal', 'click', explorationId);
+    },
+    registerAcceptTutorialModalEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'AcceptTutorialModal', 'click', explorationId);
+    },
+    // Metrics for visiting the help center
+    registerClickHelpButtonEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'ClickHelpButton', 'click', explorationId);
+    },
+    registerVisitHelpCenterEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'VisitHelpCenter', 'click', explorationId);
+    },
+    registerOpenTutorialFromHelpCenterEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'OpenTutorialFromHelpCenter', 'click', explorationId);
+    },
+    // Metrics for exiting the tutorial
+    registerSkipTutorialEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'SkipTutorial', 'click', explorationId);
+    },
+    registerFinishTutorialEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'FinishTutorial', 'click', explorationId);
+    },
+    // Metrics for first time editor use
+    registerEditorFirstEntryEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'FirstEnterEditor', 'open', explorationId);
+    },
+    registerFirstOpenContentBoxEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'FirstOpenContentBox', 'open', explorationId);
+    },
+    registerFirstSaveContentEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'FirstSaveContent', 'click', explorationId);
+    },
+    registerFirstClickAddInteractionEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'FirstClickAddInteraction', 'click', explorationId);
+    },
+    registerFirstSelectInteractionTypeEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'FirstSelectInteractionType', 'click', explorationId);
+    },
+    registerFirstSaveInteractionEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'FirstSaveInteraction', 'click', explorationId);
+    },
+    registerFirstSaveRuleEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'FirstSaveRule', 'click', explorationId);
+    },
+    registerFirstCreateSecondStateEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'FirstCreateSecondState', 'create', explorationId);
+    },
+    // Metrics for publishing explorations
+    registerSavePlayableExplorationEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'SavePlayableExploration', 'save', explorationId);
+    },
+    registerOpenPublishExplorationModalEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'PublishExplorationModal', 'open', explorationId);
+    },
+    registerPublishExplorationEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'PublishExploration', 'click', explorationId);
+    },
+    registerVisitOppiaFromIframeEvent: function(explorationId) {
+      _sendEventToGoogleAnalytics(
+        'VisitOppiaFromIframe', 'click', explorationId);
+    },
+    registerNewCard: function(cardNum) {
+      if (cardNum <= 10 || cardNum % 10 === 0) {
+        _sendEventToGoogleAnalytics('PlayerNewCard', 'click', cardNum);
+      }
+    },
+    registerFinishExploration: function() {
+      _sendEventToGoogleAnalytics('PlayerFinishExploration', 'click', '');
     }
   };
 }]);
@@ -426,14 +651,14 @@ oppia.factory('oppiaDebouncer', [function() {
     // for `wait` milliseconds.
     debounce: function(func, millisecsToWait) {
       var timeout;
-      var context;
-      var args;
+      var context = this;
+      var args = arguments;
       var timestamp;
       var result;
 
       var later = function() {
         var last = new Date().getTime() - timestamp;
-        if (last < millisecsToWait && last > 0) {
+        if (last < millisecsToWait) {
           timeout = setTimeout(later, millisecsToWait - last);
         } else {
           timeout = null;
@@ -458,21 +683,35 @@ oppia.factory('oppiaDebouncer', [function() {
   };
 }]);
 
-// Service for assembling extension tags (for gadgets and interactions).
-oppia.factory('extensionTagAssemblerService', [
-    '$filter', 'oppiaHtmlEscaper', function($filter, oppiaHtmlEscaper) {
+// Shim service for functions on $window that allows these functions to be
+// mocked in unit tests.
+oppia.factory('currentLocationService', ['$window', function($window) {
   return {
-    formatCustomizationArgAttrs: function(element, customizationArgSpecs) {
-      for (var caSpecName in customizationArgSpecs) {
-        var caSpecValue = customizationArgSpecs[caSpecName].value;
-        element.attr(
-          $filter('camelCaseToHyphens')(caSpecName) + '-with-value',
-          oppiaHtmlEscaper.objToEscapedJson(caSpecValue));
-      }
-      return element;
+    getHash: function() {
+      return $window.location.hash;
+    },
+    getPathname: function() {
+      return $window.location.pathname;
     }
   };
 }]);
+
+// Service for assembling extension tags (for gadgets and interactions).
+oppia.factory('extensionTagAssemblerService', [
+  '$filter', 'oppiaHtmlEscaper', function($filter, oppiaHtmlEscaper) {
+    return {
+      formatCustomizationArgAttrs: function(element, customizationArgSpecs) {
+        for (var caSpecName in customizationArgSpecs) {
+          var caSpecValue = customizationArgSpecs[caSpecName].value;
+          element.attr(
+            $filter('camelCaseToHyphens')(caSpecName) + '-with-value',
+            oppiaHtmlEscaper.objToEscapedJson(caSpecValue));
+        }
+        return element;
+      }
+    };
+  }
+]);
 
 // Add a String.prototype.trim() polyfill for IE8.
 if (typeof String.prototype.trim !== 'function') {
@@ -510,6 +749,9 @@ oppia.factory('codeNormalizationService', [function() {
   var removeTrailingWhitespace = function(str) {
     return str.replace(/\s+$/g, '');
   };
+  var removeIntermediateWhitespace = function(str) {
+    return str.replace(/\s+/g, ' ');
+  };
   return {
     getNormalizedCode: function(codeString) {
       /*
@@ -518,7 +760,9 @@ oppia.factory('codeNormalizationService', [function() {
        *
        * - Strips out lines that start with '#' (comments), possibly preceded by
        *     whitespace.
-       * - Trims trailing whitespace on each line.
+       * - Trims trailing whitespace on each line, and normalizes multiple
+       *     whitespace characters within a single line into one space
+       *     character.
        * - Removes blank newlines.
        * - Make the indentation level four spaces.
        */
@@ -578,7 +822,8 @@ oppia.factory('codeNormalizationService', [function() {
         for (var i = 0; i < numSpacesToDesiredIndentLevel[numSpaces]; i++) {
           normalizedLine += FOUR_SPACES;
         }
-        normalizedLine += removeLeadingWhitespace(line);
+        normalizedLine += removeIntermediateWhitespace(
+          removeLeadingWhitespace(line));
         normalizedCodeLines.push(normalizedLine);
       });
       return normalizedCodeLines.join('\n');

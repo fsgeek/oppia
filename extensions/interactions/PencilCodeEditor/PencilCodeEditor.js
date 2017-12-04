@@ -24,23 +24,30 @@ oppia.directive('oppiaInteractivePencilCodeEditor', [
   'oppiaHtmlEscaper', function(oppiaHtmlEscaper) {
     return {
       restrict: 'E',
-      scope: {},
+      scope: {
+        onSubmit: '&'
+      },
       templateUrl: 'interaction/PencilCodeEditor',
       controller: [
-        '$scope', '$attrs', '$element', '$timeout', 'focusService',
-        'pencilCodeEditorRulesService',
-        function($scope, $attrs, $element, $timeout, focusService,
-            pencilCodeEditorRulesService) {
+        '$scope', '$attrs', '$element', '$timeout', '$modal',
+        'focusService', 'pencilCodeEditorRulesService',
+        function($scope, $attrs, $element, $timeout, $modal,
+          focusService, pencilCodeEditorRulesService) {
           $scope.initialCode = oppiaHtmlEscaper.escapedJsonToObj(
             $attrs.initialCodeWithValue);
-
-          var pce = new PencilCodeEmbed($element[0].children[0]);
+          var iframeDiv = $element.find('.pencil-code-editor-iframe').get(0);
+          var pce = new PencilCodeEmbed(iframeDiv);
           pce.beginLoad($scope.initialCode);
           pce.on('load', function() {
-            // Hide the turtle, and redefine say() to also write the text on the
+            // Hides the error console at the bottom right, and prevents it
+            // from showing up even if the code has an error. Also, hides the
+            // turtle, and redefines say() to also write the text on the
             // screen.
             pce.setupScript([{
               code: [
+                'debug.hide();',
+                'window.removeEventListener("error", debug)',
+                '',
                 'ht();',
                 '',
                 'oldsay = window.say',
@@ -62,7 +69,23 @@ oppia.directive('oppiaInteractivePencilCodeEditor', [
           });
 
           $scope.reset = function() {
-            pce.setCode($scope.initialCode);
+            $modal.open({
+              templateUrl: 'modals/pencilCodeResetConfirmation',
+              backdrop: 'static',
+              keyboard: false,
+              controller: [
+                '$scope', '$modalInstance', function($scope, $modalInstance) {
+                  $scope.cancel = function() {
+                    $modalInstance.dismiss();
+                  };
+
+                  $scope.resetCode = function() {
+                    $modalInstance.close();
+                  };
+                }]
+            }).result.then(function() {
+              pce.setCode($scope.initialCode);
+            });
           };
 
           var getNormalizedCode = function() {
@@ -98,12 +121,15 @@ oppia.directive('oppiaInteractivePencilCodeEditor', [
               console.log('------');
 
               hasSubmittedAnswer = true;
-              $scope.$parent.submitAnswer({
-                code: normalizedCode,
-                output: output || '',
-                evaluation: '',
-                error: ''
-              }, pencilCodeEditorRulesService);
+              $scope.onSubmit({
+                answer: {
+                  code: normalizedCode,
+                  output: output || '',
+                  evaluation: '',
+                  error: ''
+                },
+                rulesService: pencilCodeEditorRulesService
+              });
             }, true);
           });
 
@@ -168,43 +194,50 @@ oppia.directive('oppiaShortResponsePencilCodeEditor', [
 ]);
 
 oppia.factory('pencilCodeEditorRulesService', [
-    '$filter', 'codeNormalizationService',
-    function($filter, codeNormalizationService) {
-  return {
-    CodeEquals: function(answer, inputs) {
-      var normalizedCode =
-        codeNormalizationService.getNormalizedCode(answer.code);
-      var normalizedExpectedCode =
-        codeNormalizationService.getNormalizedCode(inputs.x);
-      return normalizedCode == normalizedExpectedCode;
-    },
-    CodeContains: function(answer, inputs) {
-      var normalizedCode =
-        codeNormalizationService.getNormalizedCode(answer.code);
-      var normalizedSnippet =
-        codeNormalizationService.getNormalizedCode(inputs.x);
-      return normalizedCode.indexOf(normalizedSnippet) != -1;
-    },
-    CodeDoesNotContain: function(answer, inputs) {
-      var normalizedCode =
-        codeNormalizationService.getNormalizedCode(answer.code);
-      var normalizedSnippet =
-        codeNormalizationService.getNormalizedCode(inputs.x);
-      return normalizedCode.indexOf(normalizedSnippet) == -1;
-    },
-    OutputEquals: function(answer, inputs) {
-      var normalizedOutput = $filter('normalizeWhitespace')(answer.output);
-      var normalizedExpectedOutput =
-        $filter('normalizeWhitespace')(inputs.x);
-      return normalizedOutput == normalizedExpectedOutput;
-    },
-    ResultsInError: function(answer) {
-      return !!(answer.error.trim());
-    },
-    ErrorContains: function(answer, inputs) {
-      var normalizedError = $filter('normalizeWhitespace')(answer.error);
-      var normalizedSnippet = $filter('normalizeWhitespace')(inputs.x);
-      return normalizedError.indexOf(normalizedSnippet) != -1;
-    }
-  };
-}]);
+  '$filter', 'codeNormalizationService',
+  function($filter, codeNormalizationService) {
+    return {
+      CodeEquals: function(answer, inputs) {
+        var normalizedCode =
+          codeNormalizationService.getNormalizedCode(answer.code);
+        var normalizedExpectedCode =
+          codeNormalizationService.getNormalizedCode(inputs.x);
+        return normalizedCode === normalizedExpectedCode;
+      },
+      CodeContains: function(answer, inputs) {
+        var normalizedCode =
+          codeNormalizationService.getNormalizedCode(answer.code);
+        var normalizedSnippet =
+          codeNormalizationService.getNormalizedCode(inputs.x);
+        return normalizedCode.indexOf(normalizedSnippet) !== -1;
+      },
+      CodeDoesNotContain: function(answer, inputs) {
+        var normalizedCode =
+          codeNormalizationService.getNormalizedCode(answer.code);
+        var normalizedSnippet =
+          codeNormalizationService.getNormalizedCode(inputs.x);
+        return normalizedCode.indexOf(normalizedSnippet) === -1;
+      },
+      OutputEquals: function(answer, inputs) {
+        var normalizedOutput = $filter('normalizeWhitespace')(answer.output);
+        var normalizedExpectedOutput =
+          $filter('normalizeWhitespace')(inputs.x);
+        return normalizedOutput === normalizedExpectedOutput;
+      },
+      OutputRoughlyEquals: function(answer, inputs) {
+        var normalizedOutput = $filter(
+          'normalizeWhitespacePunctuationAndCase')(answer.output);
+        var normalizedExpectedOutput =
+          $filter('normalizeWhitespacePunctuationAndCase')(inputs.x);
+        return normalizedOutput === normalizedExpectedOutput;
+      },
+      ResultsInError: function(answer) {
+        return !!(answer.error.trim());
+      },
+      ErrorContains: function(answer, inputs) {
+        var normalizedError = $filter('normalizeWhitespace')(answer.error);
+        var normalizedSnippet = $filter('normalizeWhitespace')(inputs.x);
+        return normalizedError.indexOf(normalizedSnippet) !== -1;
+      }
+    };
+  }]);

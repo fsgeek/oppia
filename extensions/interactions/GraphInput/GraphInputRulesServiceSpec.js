@@ -14,8 +14,6 @@
 
 /**
  * @fileoverview Unit tests for Graph Input rules.
- *
- * @author wxyxinyu@gmail.com (Xinyu Wu)
  */
 
 describe('Graph Input service', function() {
@@ -204,7 +202,7 @@ describe('Graph Input service', function() {
 
   var undirectedCycleGraph = function(numVertices) {
     var graph = undirectedNullGraph(numVertices);
-    if (numVertices == 1) {
+    if (numVertices === 1) {
       return graph;
     }
     for (var i = 0; i < numVertices; i++) {
@@ -267,7 +265,7 @@ describe('Graph Input service', function() {
 
   var directedCycleGraph = function(numVertices) {
     var graph = directedNullGraph(numVertices);
-    if (numVertices == 1) {
+    if (numVertices === 1) {
       return graph;
     }
     for (var i = 0; i < numVertices; i++) {
@@ -890,37 +888,38 @@ describe('Graph Input service', function() {
     });
 
     it('should return false for graphs that are only weakly connected',
-        function() {
-      expect(girs.HasGraphProperty({
-        vertices: [{
-          label: 'a',
-          x: 1.0,
-          y: 1.0
+      function() {
+        expect(girs.HasGraphProperty({
+          vertices: [{
+            label: 'a',
+            x: 1.0,
+            y: 1.0
+          }, {
+            label: 'b',
+            x: 2.0,
+            y: 2.0
+          }, {
+            label: 'c',
+            x: 0.0,
+            y: 0.0
+          }],
+          edges: [{
+            src: 0,
+            dst: 1,
+            weight: 2
+          }, {
+            src: 2,
+            dst: 1,
+            weight: 1
+          }],
+          isDirected: true,
+          isWeighted: true,
+          isLabeled: true
         }, {
-          label: 'b',
-          x: 2.0,
-          y: 2.0
-        }, {
-          label: 'c',
-          x: 0.0,
-          y: 0.0
-        }],
-        edges: [{
-          src: 0,
-          dst: 1,
-          weight: 2
-        }, {
-          src: 2,
-          dst: 1,
-          weight: 1
-        }],
-        isDirected: true,
-        isWeighted: true,
-        isLabeled: true
-      }, {
-        p: 'strongly_connected'
-      })).toBe(false);
-    });
+          p: 'strongly_connected'
+        })).toBe(false);
+      }
+    );
   });
 
   describe('\'is acyclic\' rule', function() {
@@ -1260,211 +1259,6 @@ describe('Graph Input service', function() {
       }, {
         p: 'regular'
       })).toBe(false);
-    });
-  });
-
-  describe('fuzzy rule', function() {
-    var RULE_INPUT = {
-      training_data: [{
-        vertices: [{
-          label: '',
-          x: 1.0,
-          y: 1.0
-        }, {
-          label: '',
-          x: 2.0,
-          y: 2.0
-        }, {
-          label: '',
-          x: 3.0,
-          y: 3.0
-        }],
-        edges: [{
-          src: 0,
-          dst: 1,
-          weight: 1
-        }, {
-          src: 1,
-          dst: 2,
-          weight: 1
-        }, {
-          src: 2,
-          dst: 0,
-          weight: 1
-        }],
-        isDirected: false,
-        isWeighted: false,
-        isLabeled: false
-      }, {
-        vertices: [{
-          label: '',
-          x: 1.0,
-          y: 1.0
-        }, {
-          label: '',
-          x: 2.0,
-          y: 2.0
-        }, {
-          label: '',
-          x: 3.0,
-          y: 3.0
-        }, {
-          label: '',
-          x: 4.0,
-          y: 4.0
-        }],
-        edges: [{
-          src: 0,
-          dst: 1,
-          weight: 1
-        }, {
-          src: 1,
-          dst: 2,
-          weight: 1
-        }, {
-          src: 2,
-          dst: 3,
-          weight: 1
-        }, {
-          src: 3,
-          dst: 0,
-          weight: 1
-        }],
-        isDirected: false,
-        isWeighted: false,
-        isLabeled: false
-      }]
-    };
-
-    it('should match isomorphic graphs', function() {
-      expect(girs.FuzzyMatches({
-        vertices: [{
-          label: '',
-          x: 4.0,
-          y: 4.0
-        }, {
-          label: '',
-          x: 5.0,
-          y: 5.0
-        }, {
-          label: '',
-          x: 6.0,
-          y: 6.0
-        }],
-        edges: [{
-          src: 2,
-          dst: 0,
-          weight: 1
-        }, {
-          src: 0,
-          dst: 1,
-          weight: 1
-        }, {
-          src: 2,
-          dst: 1,
-          weight: 1
-        }],
-        isDirected: false,
-        isWeighted: false,
-        isLabeled: false
-      }, RULE_INPUT)).toBe(true);
-
-      expect(girs.FuzzyMatches({
-        vertices: [{
-          label: '',
-          x: 4.0,
-          y: 4.0
-        }, {
-          label: '',
-          x: 5.0,
-          y: 5.0
-        }, {
-          label: '',
-          x: 6.0,
-          y: 6.0
-        }],
-        edges: [{
-          src: 2,
-          dst: 0,
-          weight: 1
-        }, {
-          src: 0,
-          dst: 1,
-          weight: 1
-        }, {
-          src: 2,
-          dst: 1,
-          weight: 1
-        }],
-        isDirected: false,
-        isWeighted: false,
-        isLabeled: false
-      }, RULE_INPUT)).toBe(true);
-    });
-
-    it('should match graphs isomorphic to another graph in the training data',
-        function() {
-      expect(girs.FuzzyMatches({
-        vertices: [{
-          label: '',
-          x: 4.0,
-          y: 4.0
-        }, {
-          label: '',
-          x: 5.0,
-          y: 5.0
-        }, {
-          label: '',
-          x: 6.0,
-          y: 6.0
-        }, {
-          label: '',
-          x: 7.0,
-          y: 7.0
-        }],
-        edges: [{
-          src: 3,
-          dst: 0,
-          weight: 1
-        }, {
-          src: 0,
-          dst: 1,
-          weight: 1
-        }, {
-          src: 2,
-          dst: 1,
-          weight: 1
-        }, {
-          src: 3,
-          dst: 2,
-          weight: 1
-        }],
-        isDirected: false,
-        isWeighted: false,
-        isLabeled: false
-      }, RULE_INPUT)).toBe(true);
-    });
-
-    it('should fail on non-isomorphic graphs', function() {
-      expect(girs.FuzzyMatches({
-        vertices: [{
-          label: '',
-          x: 4.0,
-          y: 4.0
-        }, {
-          label: '',
-          x: 5.0,
-          y: 5.0
-        }],
-        edges: [{
-          src: 1,
-          dst: 0,
-          weight: 1
-        }],
-        isDirected: false,
-        isWeighted: false,
-        isLabeled: false
-      }, RULE_INPUT)).toBe(false);
     });
   });
 });

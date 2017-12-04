@@ -26,6 +26,7 @@ class Image(base.BaseRichTextComponent):
     frontend_name = 'image'
     tooltip = 'Insert image'
     requires_fs = True
+    is_block_element = True
 
     _customization_arg_specs = [{
         'name': 'filepath',
@@ -38,10 +39,31 @@ class Image(base.BaseRichTextComponent):
         },
         'default_value': '',
     }, {
-        'name': 'alt',
-        'description': 'Alternative text (for screen readers)',
+        'name': 'caption',
+        'description': ('Caption for image (optional)'),
         'schema': {
             'type': 'unicode',
         },
         'default_value': '',
+    }, {
+        'name': 'alt',
+        'description': (
+            'Briefly explain this image to a visually impaired '
+            'learner'),
+        'schema': {
+            'type': 'unicode',
+            'validators': [{
+                'id': 'is_nonempty',
+            }],
+            'ui_config': {
+                'placeholder': (
+                    'Description of Image (Example : George Handel, '
+                    '18th century baroque composer)'),
+            },
+        },
+        'default_value': '',
     }]
+
+    @property
+    def preview_url_template(self):
+        return '/imagehandler/<[explorationId]>/<[filepath]>'

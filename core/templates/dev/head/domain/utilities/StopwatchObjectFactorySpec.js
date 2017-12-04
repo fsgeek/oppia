@@ -14,8 +14,6 @@
 
 /**
  * @fileoverview Unit tests for StopwatchObjectFactory.
- *
- * @author sll@google.com (Sean Lip)
  */
 
 describe('Stopwatch object factory', function() {
@@ -27,9 +25,11 @@ describe('Stopwatch object factory', function() {
 
     beforeEach(inject(function($injector) {
       StopwatchObjectFactory = $injector.get('StopwatchObjectFactory');
-      spyOn($injector.get('$log'), 'error').andCallFake(function(errorMessage) {
-        errorLog.push(errorMessage);
-      });
+      spyOn($injector.get('$log'), 'error').and.callFake(
+        function(errorMessage) {
+          errorLog.push(errorMessage);
+        }
+      );
     }));
 
     var changeCurrentTime = function(stopwatch, desiredCurrentTime) {

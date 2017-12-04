@@ -63,7 +63,7 @@ class ExplorationModel(base_models.VersionedModel):
     author_notes = ndb.TextProperty(default='', indexed=False)
     # Schema storing specifications of the contents of any gadget panels,
     # along with associated customizations for each gadget instance.
-    skin_customizations = ndb.JsonProperty(required=True, indexed=False)
+    skin_customizations = ndb.JsonProperty(indexed=False)
 
     # The version of the states blob schema.
     states_schema_version = ndb.IntegerProperty(
@@ -96,7 +96,18 @@ class ExplorationModel(base_models.VersionedModel):
         return cls.get_all().count()
 
     def commit(self, committer_id, commit_message, commit_cmds):
-        """Updates the exploration using the properties dict, then saves it."""
+        """Updates the exploration using the properties dict, then saves it.
+
+        Args:
+            committer_id: str. The user id of the user who committed the
+                change.
+            commit_message: str. The commit description message.
+            commit_cmds: list(dict). A list of commands, describing changes
+                made in this model, which should give sufficient information to
+                reconstruct the commit. Each dict always contains:
+                    cmd: str. Unique command.
+                and additional arguments for that command.
+        """
         super(ExplorationModel, self).commit(
             committer_id, commit_message, commit_cmds)
 
@@ -105,6 +116,18 @@ class ExplorationModel(base_models.VersionedModel):
         """Record the event to the commit log after the model commit.
 
         Note that this extends the superclass method.
+
+        Args:
+            committer_id: str. The user_id of the user who committed the
+                change.
+            commit_type: str. The type of commit. Possible values are in
+                core.storage.base_models.COMMIT_TYPE_CHOICES.
+            commit_message: str. The commit description message.
+            commit_cmds: list(dict). A list of commands, describing changes
+                made in this model, which should give sufficient information to
+                reconstruct the commit. Each dict always contains:
+                    cmd: str. Unique command.
+                and then additional arguments for that command.
         """
         super(ExplorationModel, self)._trusted_commit(
             committer_id, commit_type, commit_message, commit_cmds)
@@ -195,7 +218,19 @@ class ExplorationRightsModel(base_models.VersionedModel):
             self, committer_id, commit_type, commit_message, commit_cmds):
         """Record the event to the commit log after the model commit.
 
-        Note that this overrides the superclass method.
+        Note that this extends the superclass method.
+
+        Args:
+            committer_id: str. The user_id of the user who committed the
+                change.
+            commit_type: str. The type of commit. Possible values are in
+                core.storage.base_models.COMMIT_TYPE_CHOICES.
+            commit_message: str. The commit description message.
+            commit_cmds: list(dict). A list of commands, describing changes
+                made in this model, should give sufficient information to
+                reconstruct the commit. Each dict always contains:
+                    cmd: str. Unique command.
+                and then additional arguments for that command.
         """
         super(ExplorationRightsModel, self)._trusted_commit(
             committer_id, commit_type, commit_message, commit_cmds)
@@ -269,12 +304,58 @@ class ExplorationCommitLogEntryModel(base_models.BaseModel):
 
     @classmethod
     def get_all_commits(cls, page_size, urlsafe_start_cursor):
+        """Fetches a list of all the commits sorted by their last updated
+        attribute.
+
+        Args:
+            page_size: int. The maximum number of entities to be returned.
+            urlsafe_start_cursor: str or None. If provided, the list of
+                returned entities starts from this datastore cursor.
+                Otherwise, the returned entities start from the beginning
+                of the full list of entities.
+
+        Returns:
+            3-tuple of (results, cursor, more) as described in fetch_page() at:
+            https://developers.google.com/appengine/docs/python/ndb/queryclass,
+            where:
+                results: List of query results.
+                cursor: str or None. A query cursor pointing to the next
+                    batch of results. If there are no more results, this will
+                    be None.
+                more: bool. If True, there are (probably) more results after
+                    this batch. If False, there are no further results after
+                    this batch.
+        """
         return cls._fetch_page_sorted_by_last_updated(
             cls.query(), page_size, urlsafe_start_cursor)
 
     @classmethod
     def get_all_non_private_commits(
             cls, page_size, urlsafe_start_cursor, max_age=None):
+        """Fetches a list of all the non-private commits sorted by their
+        last updated attribute.
+
+        Args:
+            page_size: int. The maximum number of entities to be returned.
+            urlsafe_start_cursor: str or None. If provided, the list of
+                returned entities starts from this datastore cursor.
+                Otherwise, the returned entities start from the beginning
+                of the full list of entities.
+            max_age: datetime.timedelta. The maximum time duration within which
+                commits are needed.
+
+        Returns:
+            3-tuple of (results, cursor, more) which were created which were
+            created no earlier than max_age before the current time where:
+                results: List of query results.
+                cursor: str or None. A query cursor pointing to the next
+                    batch of results. If there are no more results, this will
+                    be None.
+                more: bool. If True, there are (probably) more results after
+                    this batch. If False, there are no further results after
+                    this batch.
+        """
+
         if not isinstance(max_age, datetime.timedelta) and max_age is not None:
             raise ValueError(
                 'max_age must be a datetime.timedelta instance or None.')
@@ -291,7 +372,7 @@ class ExpSummaryModel(base_models.BaseModel):
     """Summary model for an Oppia exploration.
 
     This should be used whenever the content blob of the exploration is not
-    needed (e.g. gallery, search, etc).
+    needed (e.g. in search results, etc).
 
     A ExpSummaryModel instance stores the following information:
 
@@ -310,13 +391,15 @@ class ExpSummaryModel(base_models.BaseModel):
     # The objective of this exploration.
     objective = ndb.TextProperty(required=True, indexed=False)
     # The ISO 639-1 code for the language this exploration is written in.
-    language_code = ndb.StringProperty(
-        required=True, indexed=True)
+    language_code = ndb.StringProperty(required=True, indexed=True)
     # Tags associated with this exploration.
     tags = ndb.StringProperty(repeated=True, indexed=True)
 
     # Aggregate user-assigned ratings of the exploration
     ratings = ndb.JsonProperty(default=None, indexed=False)
+
+    # Scaled average rating for the exploration.
+    scaled_average_rating = ndb.FloatProperty(indexed=True)
 
     # Time when the exploration model was last updated (not to be
     # confused with last_updated, which is the time when the
@@ -326,6 +409,8 @@ class ExpSummaryModel(base_models.BaseModel):
     # with created_on, which is the time when the exploration *summary*
     # model was created)
     exploration_model_created_on = ndb.DateTimeProperty(indexed=True)
+    # Time when the exploration was first published.
+    first_published_msec = ndb.FloatProperty(indexed=True)
 
     # The publication status of this exploration.
     status = ndb.StringProperty(
@@ -359,7 +444,11 @@ class ExpSummaryModel(base_models.BaseModel):
 
     @classmethod
     def get_non_private(cls):
-        """Returns an iterable with non-private exp summary models."""
+        """Returns an iterable with non-private ExpSummary models.
+
+        Returns:
+            iterable. An iterable with non-private ExpSummary models.
+        """
         return ExpSummaryModel.query().filter(
             ExpSummaryModel.status != feconf.ACTIVITY_STATUS_PRIVATE
         ).filter(
@@ -367,9 +456,37 @@ class ExpSummaryModel(base_models.BaseModel):
         ).fetch(feconf.DEFAULT_QUERY_LIMIT)
 
     @classmethod
+    def get_top_rated(cls, limit):
+        """Fetches the top-rated exp summaries that are public in descending
+        order of scaled_average_rating.
+
+        Args:
+            limit: int. The maximum number of results to return.
+
+        Returns:
+            iterable. An iterable with the top rated exp summaries that are
+                public in descending order of scaled_average_rating.
+        """
+        return ExpSummaryModel.query().filter(
+            ndb.OR(ExpSummaryModel.status == feconf.ACTIVITY_STATUS_PUBLIC,
+                   ExpSummaryModel.status == feconf.ACTIVITY_STATUS_PUBLICIZED)
+        ).filter(
+            ExpSummaryModel.deleted == False  # pylint: disable=singleton-comparison
+        ).order(
+            -ExpSummaryModel.scaled_average_rating
+        ).fetch(limit)
+
+    @classmethod
     def get_private_at_least_viewable(cls, user_id):
-        """Returns an iterable with private exp summaries that are at least
-        viewable by the given user.
+        """Fetches private exp summaries that are at least viewable by the
+        given user.
+
+        Args:
+            user_id: The id of the given user.
+
+        Returns:
+            iterable. An iterable with private exp summaries that are at least
+                viewable by the given user.
         """
         return ExpSummaryModel.query().filter(
             ExpSummaryModel.status == feconf.ACTIVITY_STATUS_PRIVATE
@@ -383,8 +500,14 @@ class ExpSummaryModel(base_models.BaseModel):
 
     @classmethod
     def get_at_least_editable(cls, user_id):
-        """Returns an iterable with exp summaries that are at least
-        editable by the given user.
+        """Fetches exp summaries that are at least editable by the given user.
+
+        Args:
+            user_id: The id of the given user.
+
+        Returns:
+            iterable. An iterable with exp summaries that are at least
+                editable by the given user.
         """
         return ExpSummaryModel.query().filter(
             ndb.OR(ExpSummaryModel.owner_ids == user_id,
@@ -392,3 +515,24 @@ class ExpSummaryModel(base_models.BaseModel):
         ).filter(
             ExpSummaryModel.deleted == False  # pylint: disable=singleton-comparison
         ).fetch(feconf.DEFAULT_QUERY_LIMIT)
+
+    @classmethod
+    def get_recently_published(cls, limit):
+        """Fetches exp summaries that are recently published.
+
+        Args:
+            limit: int. The maximum number of results to return.
+
+        Returns:
+            An iterable with exp summaries that are recently published. The
+                returned list is sorted by the time of publication with latest
+                being first in the list.
+        """
+        return ExpSummaryModel.query().filter(
+            ndb.OR(ExpSummaryModel.status == feconf.ACTIVITY_STATUS_PUBLIC,
+                   ExpSummaryModel.status == feconf.ACTIVITY_STATUS_PUBLICIZED)
+        ).filter(
+            ExpSummaryModel.deleted == False  # pylint: disable=singleton-comparison
+        ).order(
+            -ExpSummaryModel.first_published_msec
+        ).fetch(limit)

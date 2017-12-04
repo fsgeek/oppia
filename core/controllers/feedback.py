@@ -18,17 +18,21 @@ from core.controllers import base
 from core.controllers import editor
 from core.domain import exp_services
 from core.domain import feedback_services
+from core.platform import models
+import feconf
 
+
+transaction_services = models.Registry.import_transaction_services()
 
 class ThreadListHandler(base.BaseHandler):
     """Handles operations relating to feedback thread lists."""
 
-    PAGE_NAME_FOR_CSRF = 'editor'
+    GET_HANDLER_ERROR_RETURN_TYPE = feconf.HANDLER_TYPE_JSON
 
     def get(self, exploration_id):
         self.values.update({
-            'threads': feedback_services.get_all_threads(
-                exploration_id, False)})
+            'threads': [t.to_dict() for t in feedback_services.get_all_threads(
+                exploration_id, False)]})
         self.render_json(self.values)
 
     @base.require_user
@@ -55,15 +59,15 @@ class ThreadListHandler(base.BaseHandler):
 class ThreadHandler(base.BaseHandler):
     """Handles operations relating to feedback threads."""
 
-    PAGE_NAME_FOR_CSRF = 'editor'
+    GET_HANDLER_ERROR_RETURN_TYPE = feconf.HANDLER_TYPE_JSON
 
     def get(self, exploration_id, thread_id):  # pylint: disable=unused-argument
+        suggestion = feedback_services.get_suggestion(exploration_id, thread_id)
         self.values.update({
-            'messages': feedback_services.get_messages(
-                exploration_id, thread_id)})
-        self.values.update({
-            'suggestion': feedback_services.get_suggestion(
-                exploration_id, thread_id)})
+            'messages': [m.to_dict() for m in feedback_services.get_messages(
+                exploration_id, thread_id)],
+            'suggestion': suggestion.to_dict() if suggestion else None
+        })
         self.render_json(self.values)
 
     @base.require_user
@@ -88,22 +92,14 @@ class ThreadHandler(base.BaseHandler):
         self.render_json(self.values)
 
 
-class FeedbackLastUpdatedHandler(base.BaseHandler):
-    """Returns the last time a thread for this exploration was updated."""
-
-    def get(self, exploration_id):
-        self.values.update({
-            'last_updated': feedback_services.get_last_updated_time(
-                exploration_id)})
-        self.render_json(self.values)
-
-
 class RecentFeedbackMessagesHandler(base.BaseHandler):
     """Returns a list of recently-posted feedback messages.
 
     Note that this currently also includes messages posted in private
     explorations.
     """
+
+    GET_HANDLER_ERROR_RETURN_TYPE = feconf.HANDLER_TYPE_JSON
 
     @base.require_moderator
     def get(self):
@@ -114,16 +110,35 @@ class RecentFeedbackMessagesHandler(base.BaseHandler):
                 urlsafe_start_cursor=urlsafe_start_cursor))
 
         self.render_json({
-            'results': all_feedback_messages,
+            'results': [m.to_dict() for m in all_feedback_messages],
             'cursor': new_urlsafe_start_cursor,
             'more': more,
         })
 
 
+class FeedbackStatsHandler(base.BaseHandler):
+    """Returns Feedback stats for an exploration.
+        - Number of open threads
+        - Number of total threads
+    """
+
+    GET_HANDLER_ERROR_RETURN_TYPE = feconf.HANDLER_TYPE_JSON
+
+    def get(self, exploration_id):
+        feedback_thread_analytics = (
+            feedback_services.get_thread_analytics(
+                exploration_id))
+        self.values.update({
+            'num_open_threads': (
+                feedback_thread_analytics.num_open_threads),
+            'num_total_threads': (
+                feedback_thread_analytics.num_total_threads),
+        })
+        self.render_json(self.values)
+
+
 class SuggestionHandler(base.BaseHandler):
     """"Handles operations relating to learner suggestions."""
-
-    PAGE_NAME_FOR_CSRF = 'player'
 
     @base.require_user
     def post(self, exploration_id):
@@ -140,7 +155,6 @@ class SuggestionHandler(base.BaseHandler):
 class SuggestionActionHandler(base.BaseHandler):
     """"Handles actions performed on threads with suggestions."""
 
-    PAGE_NAME_FOR_CSRF = 'editor'
     _ACCEPT_ACTION = 'accept'
     _REJECT_ACTION = 'reject'
 
@@ -165,10 +179,11 @@ class SuggestionActionHandler(base.BaseHandler):
 class SuggestionListHandler(base.BaseHandler):
     """Handles operations relating to list of threads with suggestions."""
 
-    PAGE_NAME_FOR_CSRF = 'editor'
     _LIST_TYPE_OPEN = 'open'
     _LIST_TYPE_CLOSED = 'closed'
     _LIST_TYPE_ALL = 'all'
+
+    GET_HANDLER_ERROR_RETURN_TYPE = feconf.HANDLER_TYPE_JSON
 
     def _string_to_bool(self, has_suggestion):
         if has_suggestion == 'true':
@@ -199,5 +214,20 @@ class SuggestionListHandler(base.BaseHandler):
         else:
             raise self.InvalidInputException('Invalid list type.')
 
-        self.values.update({'threads': threads})
+        self.values.update({'threads': [t.to_dict() for t in threads]})
+        self.render_json(self.values)
+
+
+class FeedbackThreadViewEventHandler(base.BaseHandler):
+    """Records when the given user views a feedback thread, in order to clear
+    viewed feedback messages from emails that might be sent in future to this
+    user."""
+
+    @base.require_user
+    def post(self):
+        exploration_id = self.payload.get('exploration_id')
+        thread_id = self.payload.get('thread_id')
+        transaction_services.run_in_transaction(
+            feedback_services.clear_feedback_message_references, self.user_id,
+            exploration_id, thread_id)
         self.render_json(self.values)

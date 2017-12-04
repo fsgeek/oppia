@@ -14,8 +14,6 @@
 
 /**
  * @fileoverview Directive for the answer group editor.
- *
- * @author bhenning@google.com (Ben Henning)
  */
 
 oppia.directive('answerGroupEditor', [function() {
@@ -34,12 +32,12 @@ oppia.directive('answerGroupEditor', [function() {
     templateUrl: 'inline/answer_group_editor',
     controller: [
       '$scope', 'stateInteractionIdService', 'responsesService',
-      'editorContextService', 'warningsData', 'INTERACTION_SPECS',
-      'FUZZY_RULE_TYPE',
+      'editorContextService', 'alertsService', 'INTERACTION_SPECS',
+      'RULE_TYPE_CLASSIFIER', 'RuleObjectFactory',
       function(
           $scope, stateInteractionIdService, responsesService,
-          editorContextService, warningsData, INTERACTION_SPECS,
-          FUZZY_RULE_TYPE) {
+          editorContextService, alertsService, INTERACTION_SPECS,
+          RULE_TYPE_CLASSIFIER, RuleObjectFactory) {
         $scope.rulesMemento = null;
         $scope.activeRuleIndex = responsesService.getActiveRuleIndex();
         $scope.editAnswerGroupForm = {};
@@ -159,14 +157,14 @@ oppia.directive('answerGroupEditor', [function() {
           var ruleTypes = Object.keys(ruleDescriptions);
           var ruleType = null;
           for (var i = 0; i < ruleTypes.length; i++) {
-            if (ruleTypes[i] != FUZZY_RULE_TYPE) {
+            if (ruleTypes[i] !== RULE_TYPE_CLASSIFIER) {
               ruleType = ruleTypes[i];
               break;
             }
           }
           if (!ruleType) {
             // This should never happen. An interaction must have more than just
-            // a fuzzy rule, as verified in a backend test suite:
+            // a classifier rule, as verified in a backend test suite:
             //   extensions.interactions.base_test.InteractionUnitTests.
             return;
           }
@@ -192,10 +190,7 @@ oppia.directive('answerGroupEditor', [function() {
           // TODO(bhenning): Should use functionality in ruleEditor.js, but move
           // it to responsesService in StateResponses.js to properly form a new
           // rule.
-          $scope.rules.push({
-            inputs: inputs,
-            rule_type: ruleType
-          });
+          $scope.rules.push(RuleObjectFactory.createNew(ruleType, inputs));
           $scope.changeActiveRuleIndex($scope.rules.length - 1);
         };
 
@@ -203,8 +198,8 @@ oppia.directive('answerGroupEditor', [function() {
           $scope.rules.splice(index, 1);
           $scope.saveRules();
 
-          if ($scope.rules.length == 0) {
-            warningsData.addWarning(
+          if ($scope.rules.length === 0) {
+            alertsService.addWarning(
               'All answer groups must have at least one rule.');
           }
         };
@@ -226,7 +221,6 @@ oppia.directive('answerGroupEditor', [function() {
         $scope.changeActiveRuleIndex = function(newIndex) {
           responsesService.changeActiveRuleIndex(newIndex);
           $scope.activeRuleIndex = responsesService.getActiveRuleIndex();
-          $scope.getOnSaveAnswerGroupRulesFn()($scope.rules);
         };
 
         $scope.openRuleEditor = function(index) {

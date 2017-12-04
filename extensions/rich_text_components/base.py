@@ -20,6 +20,7 @@ import os
 
 from extensions import domain
 import feconf
+import jinja_utils
 import utils
 
 
@@ -49,6 +50,8 @@ class BaseRichTextComponent(object):
     # Whether the component requires the filesystem in some way that
     # prevents it from being used by unauthorized users.
     requires_fs = False
+    # Whether the component should be displayed as a block element.
+    is_block_element = False
     # Customization arg specifications for the component, including their
     # descriptions, schemas and default values. Overridden in subclasses.
     _customization_arg_specs = []
@@ -64,6 +67,17 @@ class BaseRichTextComponent(object):
             for cas in self._customization_arg_specs]
 
     @property
+    def preview_url_template(self):
+        """Returns a URL template which can be interpolated to a URL for the
+        image that represents the component in the RTE. The interpolation
+        dictionary used is the component's customization_args dict, extended
+        with an additional 'explorationId' key whose value corresponds to the
+        id of the containing exploration.
+        """
+        return utils.convert_png_to_data_url(os.path.join(
+            feconf.RTE_EXTENSIONS_DIR, self.id, '%sPreview.png' % self.id))
+
+    @property
     def html_body(self):
         """The HTML code containing directives and templates for the component.
 
@@ -71,11 +85,9 @@ class BaseRichTextComponent(object):
         necessary attributes are supplied. For rich-text components, this
         consists of a single directive/template pair.
         """
-        js_directives = utils.get_file_contents(os.path.join(
-            feconf.RTE_EXTENSIONS_DIR, self.id, '%s.js' % self.id))
         html_templates = utils.get_file_contents(os.path.join(
             feconf.RTE_EXTENSIONS_DIR, self.id, '%s.html' % self.id))
-        return '<script>%s</script>\n%s' % (js_directives, html_templates)
+        return jinja_utils.interpolate_cache_slug('%s' % html_templates)
 
     def to_dict(self):
         """Gets a dict representing this component. Only the default values for
@@ -95,4 +107,6 @@ class BaseRichTextComponent(object):
             'is_complex': self.is_complex,
             'requires_fs': self.requires_fs,
             'tooltip': self.tooltip,
+            'is_block_element': self.is_block_element,
+            'preview_url_template': self.preview_url_template
         }

@@ -14,8 +14,6 @@
 
 /**
  * @fileoverview Directive for the fallback editor.
- *
- * @author sean@seanlip.org (Sean Lip)
  */
 
 oppia.directive('fallbackEditor', [function() {
@@ -42,6 +40,8 @@ oppia.directive('fallbackEditor', [function() {
             min_value: 1
           }]
         };
+
+        $scope.displayFeedback = true;
 
         $scope.triggerMemento = null;
 

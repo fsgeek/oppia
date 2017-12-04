@@ -51,12 +51,22 @@ class CollectionModel(base_models.VersionedModel):
     category = ndb.StringProperty(required=True, indexed=True)
     # The objective of this collection.
     objective = ndb.TextProperty(default='', indexed=False)
+    # The language code of this collection.
+    language_code = ndb.StringProperty(
+        default=feconf.DEFAULT_LANGUAGE_CODE, indexed=True)
+    # Tags associated with this collection.
+    tags = ndb.StringProperty(repeated=True, indexed=True)
 
     # The version of all property blob schemas.
     schema_version = ndb.IntegerProperty(
         required=True, default=1, indexed=True)
-    # A dict representing all explorations belonging to this collection.
+    # DEPRECATED in v2.4.2. Do not use.
     nodes = ndb.JsonProperty(default={}, indexed=False)
+
+    # A dict representing the contents of a collection. Currently, this
+    # contains the list of nodes. This dict should contain collection data
+    # whose structure might need to be changed in the future.
+    collection_contents = ndb.JsonProperty(default={}, indexed=False)
 
     @classmethod
     def get_collection_count(cls):
@@ -64,7 +74,19 @@ class CollectionModel(base_models.VersionedModel):
         return cls.get_all().count()
 
     def commit(self, committer_id, commit_message, commit_cmds):
-        """Updates the collection using the properties dict, then saves it."""
+        """Updates the collection model by applying the given commit_cmds, then
+        saves it.
+
+        Args:
+            committer_id: str. The user_id of the user who committed the
+                change.
+            commit_message: str. The commit description message.
+            commit_cmds: list(dict). A list of commands, describing changes
+                made in this model, which should give sufficient information to
+                reconstruct the commit. Each dict always contains:
+                    cmd: str. Unique command.
+                and additional arguments for that command.
+        """
         super(CollectionModel, self).commit(
             committer_id, commit_message, commit_cmds)
 
@@ -73,6 +95,18 @@ class CollectionModel(base_models.VersionedModel):
         """Record the event to the commit log after the model commit.
 
         Note that this extends the superclass method.
+
+        Args:
+            committer_id: str. The user_id of the user who committed the
+                change.
+            commit_type: str. The type of commit. Possible values are in
+                core.storage.base_models.COMMIT_TYPE_CHOICES.
+            commit_message: str. The commit description message.
+            commit_cmds: list(dict). A list of commands, describing changes
+                made in this model, which should give sufficient information to
+                reconstruct the commit. Each dict always contains:
+                    cmd: str. Unique command.
+                and then additional arguments for that command.
         """
         super(CollectionModel, self)._trusted_commit(
             committer_id, commit_type, commit_message, commit_cmds)
@@ -152,6 +186,19 @@ class CollectionRightsModel(base_models.VersionedModel):
     )
 
     def save(self, committer_id, commit_message, commit_cmds):
+        """Updates the collection rights model by applying the given
+        commit_cmds, then saves it.
+
+        Args:
+            committer_id: str. The user_id of the user who committed the
+                change.
+            commit_message: str. The commit description message.
+            commit_cmds: list(dict). A list of commands, describing changes
+                made in this model, which should give sufficient information to
+                reconstruct the commit. Each dict always contains:
+                    cmd: str. Unique command.
+                and additional arguments for that command.
+        """
         super(CollectionRightsModel, self).commit(
             committer_id, commit_message, commit_cmds)
 
@@ -160,6 +207,18 @@ class CollectionRightsModel(base_models.VersionedModel):
         """Record the event to the commit log after the model commit.
 
         Note that this overrides the superclass method.
+
+        Args:
+            committer_id: str. The user_id of the user who committed the
+                change.
+            commit_type: str. The type of commit. Possible values are in
+                core.storage.base_models.COMMIT_TYPE_CHOICES.
+            commit_message: str. The commit description message.
+            commit_cmds: list(dict). A list of commands, describing changes
+                made in this model, should give sufficient information to
+                reconstruct the commit. Each dict always contains:
+                    cmd: str. Unique command.
+                and then additional arguments for that command.
         """
         super(CollectionRightsModel, self)._trusted_commit(
             committer_id, commit_type, commit_message, commit_cmds)
@@ -237,6 +296,28 @@ class CollectionCommitLogEntryModel(base_models.BaseModel):
 
     @classmethod
     def get_all_commits(cls, page_size, urlsafe_start_cursor):
+        """Fetches a list of all the commits sorted by their last updated
+        attribute.
+
+        Args:
+            page_size: int. The maximum number of entities to be returned.
+            urlsafe_start_cursor: str or None. If provided, the list of
+                returned entities starts from this datastore cursor.
+                Otherwise, the returned entities start from the beginning
+                of the full list of entities.
+
+        Returns:
+            3-tuple of (results, cursor, more) as described in fetch_page() at:
+            https://developers.google.com/appengine/docs/python/ndb/queryclass,
+            where:
+                results: List of query results.
+                cursor: str or None. A query cursor pointing to the next
+                    batch of results. If there are no more results, this might
+                    be None.
+                more: bool. If True, there are (probably) more results after
+                    this batch. If False, there are no further results after
+                    this batch.
+        """
         return cls._fetch_page_sorted_by_last_updated(
             cls.query(), page_size, urlsafe_start_cursor)
 
@@ -260,7 +341,7 @@ class CollectionSummaryModel(base_models.BaseModel):
     """Summary model for an Oppia collection.
 
     This should be used whenever the content blob of the collection is not
-    needed (e.g. gallery, search, etc).
+    needed (e.g. search results, etc).
 
     A CollectionSummaryModel instance stores the following information:
 
@@ -278,6 +359,10 @@ class CollectionSummaryModel(base_models.BaseModel):
     category = ndb.StringProperty(required=True, indexed=True)
     # The objective of this collection.
     objective = ndb.TextProperty(required=True, indexed=False)
+    # The ISO 639-1 code for the language this collection is written in.
+    language_code = ndb.StringProperty(required=True, indexed=True)
+    # Tags associated with this collection.
+    tags = ndb.StringProperty(repeated=True, indexed=True)
 
     # Aggregate user-assigned ratings of the collection
     ratings = ndb.JsonProperty(default=None, indexed=False)
@@ -320,10 +405,16 @@ class CollectionSummaryModel(base_models.BaseModel):
     # The version number of the collection after this commit. Only populated
     # for commits to an collection (as opposed to its rights, etc.)
     version = ndb.IntegerProperty()
+    # The number of nodes(explorations) that are within this collection.
+    node_count = ndb.IntegerProperty()
 
     @classmethod
     def get_non_private(cls):
-        """Returns an iterable with non-private collection summary models."""
+        """Returns an iterable with non-private collection summary models.
+
+        Returns:
+            iterable. An iterable with non-private collection summary models.
+        """
         return CollectionSummaryModel.query().filter(
             CollectionSummaryModel.status != feconf.ACTIVITY_STATUS_PRIVATE
         ).filter(
@@ -332,8 +423,15 @@ class CollectionSummaryModel(base_models.BaseModel):
 
     @classmethod
     def get_private_at_least_viewable(cls, user_id):
-        """Returns an iterable with private collection summaries that are at
-        least viewable by the given user.
+        """Returns an iterable with private collection summary models that are
+        at least viewable by the given user.
+
+        Args:
+            user_id: The id of the given user.
+
+        Returns:
+            iterable. An iterable with private collection summary models that
+            are at least viewable by the given user.
         """
         return CollectionSummaryModel.query().filter(
             CollectionSummaryModel.status == feconf.ACTIVITY_STATUS_PRIVATE
@@ -347,8 +445,15 @@ class CollectionSummaryModel(base_models.BaseModel):
 
     @classmethod
     def get_at_least_editable(cls, user_id):
-        """Returns an iterable with collection summaries that are at least
+        """Returns an iterable with collection summary models that are at least
         editable by the given user.
+
+        Args:
+            user_id: The id of the given user.
+
+        Returns:
+            iterable. An iterable with collection summary models that are at
+            least viewable by the given user.
         """
         return CollectionSummaryModel.query().filter(
             ndb.OR(CollectionSummaryModel.owner_ids == user_id,

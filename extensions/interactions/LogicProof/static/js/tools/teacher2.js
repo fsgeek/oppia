@@ -16,7 +16,6 @@
  * @fileoverview These functions are used to build defaultData.js. In future
     they should be made available to exploration editors to change the data
     used in an instance of the LogicProof interaction.
- * @author Jacob Davis (jacobdavis11@gmail.com)
  */
 
 var logicProofTeacher2 = (function() {
@@ -568,7 +567,8 @@ var logicProofTeacher2 = (function() {
       formulaLHS, formulaRHS, language) {
     if (language.operators.hasOwnProperty(formulaLHS.top_operator_name)) {
       throw new logicProofShared.UserError('duplicate_function_name', {
-        function: formulaLHS.top_operator_name
+        // eslint-disable-next-line quote-props
+        'function': formulaLHS.top_operator_name
       });
     }
     if (formulaLHS.top_operator_name === 'n') {

@@ -22,9 +22,9 @@ import string
 import struct
 
 from core.domain import dependency_registry
+from core.domain import exp_domain
 from core.domain import interaction_registry
 from core.domain import obj_services
-from core.domain import rule_domain
 from core.tests import test_utils
 from extensions.interactions import base
 import feconf
@@ -50,14 +50,12 @@ class InteractionAnswerUnitTests(test_utils.GenericTestBase):
     """Test the answer object and type properties of an interaction object."""
 
     def test_rules_property(self):
-        """Test that interaction.rules behaves as expected."""
+        """Test that answer normalization behaves as expected."""
         interaction = base.BaseInteraction()
         interaction.answer_type = None
         interaction.normalize_answer('15')
-        self.assertEqual(interaction.rules, [])
 
         interaction.answer_type = 'NonnegativeInt'
-        self.assertEqual(len(interaction.rules), 1)
         interaction.normalize_answer('15')
 
         with self.assertRaisesRegexp(Exception, 'not a valid object class'):
@@ -106,6 +104,21 @@ class InteractionUnitTests(test_utils.GenericTestBase):
         for dependency_id in dependency_ids:
             dependency_registry.Registry.get_dependency_html(dependency_id)
 
+    def _validate_answer_visualization_specs(self, answer_visualization_specs):
+        _ANSWER_VISUALIZATIONS_SPECS_SCHEMA = [
+            ('id', basestring), ('options', dict),
+            ('calculation_id', basestring)]
+        _ANSWER_VISUALIZATION_KEYS = [
+            item[0] for item in _ANSWER_VISUALIZATIONS_SPECS_SCHEMA]
+
+        # Check that the keys and the types of their values are correct.
+        for spec in answer_visualization_specs:
+            self.assertItemsEqual(spec.keys(), _ANSWER_VISUALIZATION_KEYS)
+            for key, item_type in _ANSWER_VISUALIZATIONS_SPECS_SCHEMA:
+                self.assertTrue(isinstance(spec[key], item_type))
+                if item_type == basestring:
+                    self.assertTrue(spec[key])
+
     def _listdir_omit_ignored(self, directory):
         """List all files and directories within 'directory', omitting the ones
         whose name ends in one of the IGNORED_FILE_SUFFIXES.
@@ -114,6 +127,14 @@ class InteractionUnitTests(test_utils.GenericTestBase):
         for suffix in IGNORED_FILE_SUFFIXES:
             names = [name for name in names if not name.endswith(suffix)]
         return names
+
+    def _get_linear_interaction_ids(self):
+        all_interaction_ids = (
+            interaction_registry.Registry.get_all_interaction_ids())
+        return [
+            interaction_id for interaction_id in all_interaction_ids
+            if interaction_registry.Registry.get_interaction_by_id(
+                interaction_id).is_linear]
 
     def test_interaction_properties(self):
         """Test the standard properties of interactions."""
@@ -150,6 +171,32 @@ class InteractionUnitTests(test_utils.GenericTestBase):
             'default_value': 1,
         }])
 
+    def test_interaction_rules(self):
+        def _check_num_interaction_rules(interaction_id, expected_num):
+            interaction = interaction_registry.Registry.get_interaction_by_id(
+                interaction_id)
+            self.assertEqual(len(interaction.rules_dict), expected_num)
+
+        _check_num_interaction_rules('MultipleChoiceInput', 1)
+        _check_num_interaction_rules('NumericInput', 7)
+        _check_num_interaction_rules('Continue', 0)
+        with self.assertRaises(KeyError):
+            _check_num_interaction_rules('FakeObjType', 0)
+
+    def test_interaction_rule_descriptions_in_dict(self):
+        interaction = interaction_registry.Registry.get_interaction_by_id(
+            'NumericInput')
+        self.assertEqual(interaction.to_dict()['rule_descriptions'], {
+            'Equals': 'is equal to {{x|Real}}',
+            'IsLessThan': 'is less than {{x|Real}}',
+            'IsGreaterThan': 'is greater than {{x|Real}}',
+            'IsLessThanOrEqualTo': 'is less than or equal to {{x|Real}}',
+            'IsGreaterThanOrEqualTo': 'is greater than or equal to {{x|Real}}',
+            'IsInclusivelyBetween': (
+                'is between {{a|Real}} and {{b|Real}}, inclusive'),
+            'IsWithinTolerance': 'is within {{tol|Real}} of {{x|Real}}'
+        })
+
     def test_default_interactions_are_valid(self):
         """Test that the default interactions are valid."""
 
@@ -169,18 +216,10 @@ class InteractionUnitTests(test_utils.GenericTestBase):
             # html file, a JS file, a validator.js file,  a directory named
             # 'static' that contains (at least) a .png thumbnail file,
             # (optionally) a JS test spec file, (optionally) a JS test spec
-            # file for rules, (optionally) a stats_response.html file and
-            # (optionally) a protractor.js file.
+            # file for rules, and (optionally) a protractor.js file.
             dir_contents = self._listdir_omit_ignored(interaction_dir)
 
             optional_dirs_and_files_count = 0
-
-            try:
-                self.assertTrue(os.path.isfile(
-                    os.path.join(interaction_dir, 'stats_response.html')))
-                optional_dirs_and_files_count += 1
-            except Exception:
-                pass
 
             try:
                 self.assertTrue(os.path.isfile(os.path.join(
@@ -253,6 +292,16 @@ class InteractionUnitTests(test_utils.GenericTestBase):
             self.assertIn(
                 '%s id="response/%s"' % (directive_prefix, interaction_id),
                 html_file_content)
+            # Check that the html template includes js script for the
+            # interaction.
+            self.assertIn(
+                '<script src="{{cache_slug}}/extensions/interactions/%s/%s.js">'
+                '</script>' % (interaction_id, interaction_id),
+                html_file_content)
+            self.assertIn(
+                '<script src="{{cache_slug}}/extensions/interactions/%s/'
+                'validator.js"></script>' % interaction_id,
+                html_file_content)
             self.assertNotIn('<script>', js_file_content)
             self.assertNotIn('</script>', js_file_content)
             self.assertIn(
@@ -291,6 +340,25 @@ class InteractionUnitTests(test_utils.GenericTestBase):
 
             self._validate_dependencies(interaction.dependency_ids)
 
+            answer_visualization_specs = (
+                interaction.answer_visualization_specs)
+            self._validate_answer_visualization_specs(
+                answer_visualization_specs)
+
+            answer_visualizations = interaction.answer_visualizations
+            for ind, visualization in enumerate(answer_visualizations):
+                self.assertEqual(
+                    visualization.id, answer_visualization_specs[ind]['id'])
+                self.assertEqual(
+                    visualization.calculation_id,
+                    answer_visualization_specs[ind]['calculation_id'])
+                self.assertEqual(
+                    visualization.options,
+                    answer_visualization_specs[ind]['options'])
+
+                # Check that the derived visualization is valid.
+                visualization.validate()
+
             # Check that supplemental interactions have instructions, and
             # inline ones do not.
             if interaction.display_mode == base.DISPLAY_MODE_INLINE:
@@ -315,7 +383,30 @@ class InteractionUnitTests(test_utils.GenericTestBase):
             else:
                 self.assertIsNone(interaction.default_outcome_heading)
 
-    def test_trainable_interactions_have_fuzzy_rules(self):
+            default_object_values = obj_services.get_default_object_values()
+
+            # Check that the rules for this interaction have object editor
+            # templates and default values.
+            for rule_name, rule_dict in interaction.rules_dict.iteritems():
+                param_list = interaction.get_rule_param_list(rule_name)
+
+                for (_, param_obj_cls) in param_list:
+                    # TODO(sll): Get rid of these special cases.
+                    if param_obj_cls.__name__ in [
+                            'NonnegativeInt', 'ListOfGraph',
+                            'ListOfCoordTwoDim', 'SetOfNormalizedString']:
+                        continue
+
+                    # Check that the rule has an object editor template.
+                    self.assertTrue(
+                        param_obj_cls.has_editor_js_template(),
+                        msg='(%s)' % rule_dict['description'])
+
+                    # Check that the rule has a default value.
+                    self.assertIn(
+                        param_obj_cls.__name__, default_object_values)
+
+    def test_trainable_interactions_have_classifiers(self):
         all_interaction_ids = (
             interaction_registry.Registry.get_all_interaction_ids())
 
@@ -323,15 +414,12 @@ class InteractionUnitTests(test_utils.GenericTestBase):
             interaction = interaction_registry.Registry.get_interaction_by_id(
                 interaction_id)
             if interaction.is_trainable:
-                obj_type = interaction.answer_type
-                all_rule_classes = rule_domain.get_rules_for_obj_type(obj_type)
                 self.assertIn(
-                    rule_domain.FUZZY_RULE_TYPE,
-                    [rule_class.__name__ for rule_class in all_rule_classes],
-                    'Expected to find a fuzzy rule in trainable '
+                    exp_domain.RULE_TYPE_CLASSIFIER, interaction.rules_dict,
+                    'Expected to find a classifier in trainable '
                     'interaction: %s' % interaction_id)
 
-    def test_untrainable_interactions_do_not_have_fuzzy_rules(self):
+    def test_untrainable_interactions_do_not_have_classifiers(self):
         all_interaction_ids = (
             interaction_registry.Registry.get_all_interaction_ids())
 
@@ -339,16 +427,13 @@ class InteractionUnitTests(test_utils.GenericTestBase):
             interaction = interaction_registry.Registry.get_interaction_by_id(
                 interaction_id)
             if not interaction.is_trainable:
-                obj_type = interaction.answer_type
-                all_rule_classes = rule_domain.get_rules_for_obj_type(obj_type)
                 self.assertNotIn(
-                    rule_domain.FUZZY_RULE_TYPE,
-                    [rule_class.__name__ for rule_class in all_rule_classes],
-                    'Did not expect to find a fuzzy rule in untrainable '
+                    exp_domain.RULE_TYPE_CLASSIFIER, interaction.rules_dict,
+                    'Did not expect to find a classifier in untrainable '
                     'interaction: %s' % interaction_id)
 
-    def test_trainable_interactions_have_more_than_just_a_fuzzy_rule(self):
-        """This ensures that trainable interactions cannot only have a fuzzy
+    def test_trainable_interactions_have_more_than_just_a_classifier(self):
+        """This ensures that trainable interactions cannot only have a soft
         rule, as that would break frontend functionality (users would not be
         able to create manual answer groups).
         """
@@ -359,24 +444,21 @@ class InteractionUnitTests(test_utils.GenericTestBase):
             interaction = interaction_registry.Registry.get_interaction_by_id(
                 interaction_id)
             if interaction.is_trainable:
-                obj_type = interaction.answer_type
-                all_rule_classes = rule_domain.get_rules_for_obj_type(obj_type)
                 self.assertNotEqual(
-                    len(all_rule_classes), 1,
+                    len(interaction.rules_dict), 1,
                     'Expected trainable interaction to have more than just a '
-                    'fuzzy rule: %s' % interaction_id)
+                    'classifier: %s' % interaction_id)
 
     def test_linear_interactions(self):
         """Sanity-check for the number of linear interactions."""
 
-        all_interaction_ids = (
-            interaction_registry.Registry.get_all_interaction_ids())
+        actual_linear_interaction_ids = self._get_linear_interaction_ids()
+        self.assertEqual(len(actual_linear_interaction_ids), 1)
 
-        count = 0
-        for interaction_id in all_interaction_ids:
-            interaction = interaction_registry.Registry.get_interaction_by_id(
-                interaction_id)
-            if interaction.is_linear:
-                count += 1
-
-        self.assertEqual(count, 1)
+    def test_linear_interaction_ids_list_matches_linear_interactions(self):
+        """Sanity-check the feconf constant which lists all linear interaction
+        IDs.
+        """
+        actual_linear_interaction_ids = self._get_linear_interaction_ids()
+        self.assertEqual(
+            actual_linear_interaction_ids, feconf.LINEAR_INTERACTION_IDS)

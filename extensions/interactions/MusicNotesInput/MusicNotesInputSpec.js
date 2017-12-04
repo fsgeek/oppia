@@ -14,8 +14,6 @@
 
 /**
  * @fileoverview Unit tests for the MusicNotesInput interaction.
- *
- * @author sll@google.com (Sean Lip)
  */
 
 describe('MusicNotesInput interaction', function() {
@@ -23,8 +21,9 @@ describe('MusicNotesInput interaction', function() {
     var $httpBackend, $templateCache;
     var elt, scope, ctrlScope;
 
-    beforeEach(module('oppia'));
     beforeEach(module('directiveTemplates'));
+    beforeEach(module('oppia', GLOBALS.TRANSLATOR_PROVIDER_FOR_TESTS));
+
     beforeEach(inject(function($compile, _$templateCache_, $rootScope) {
       $templateCache = _$templateCache_;
       var templatesHtml = $templateCache.get(
@@ -41,7 +40,7 @@ describe('MusicNotesInput interaction', function() {
       elt = angular.element('<' + TAG_NAME + '></' + TAG_NAME + '>');
       $compile(elt)(scope);
       scope.$digest();
-      ctrlScope = elt.isolateScope();
+      ctrlScope = elt[0].isolateScope();
     }));
 
     afterEach(function() {
@@ -52,7 +51,7 @@ describe('MusicNotesInput interaction', function() {
 
     it('loads the music staff template', function() {
       expect(elt.html()).toContain('oppia-music-input-valid-note-area');
-      expect(elt.html()).toContain('Play Target Sequence');
+      expect(elt.html()).toContain('I18N_INTERACTIONS_MUSIC_PLAY_SEQUENCE');
       expect(elt.html()).toContain('playCurrentSequence()');
     });
 
@@ -168,21 +167,10 @@ describe('MusicNotesInput interaction', function() {
     });
 
     it('does not do anything when asked to remove a note that does not exist',
-       function() {
-      expect(ctrlScope.noteSequence).toEqual([]);
+      function() {
+        expect(ctrlScope.noteSequence).toEqual([]);
 
-      ctrlScope._addNoteToNoteSequence({
-        baseNoteMidiNumber: 64,
-        offset: 0,
-        noteId: 'note_id_0',
-        noteStart: {
-          num: 1,
-          den: 1
-        }
-      });
-      ctrlScope._removeNotesFromNoteSequenceWithId('note_id_1');
-      expect(ctrlScope.noteSequence).toEqual([{
-        note: {
+        ctrlScope._addNoteToNoteSequence({
           baseNoteMidiNumber: 64,
           offset: 0,
           noteId: 'note_id_0',
@@ -190,9 +178,21 @@ describe('MusicNotesInput interaction', function() {
             num: 1,
             den: 1
           }
-        }
-      }]);
-    });
+        });
+        ctrlScope._removeNotesFromNoteSequenceWithId('note_id_1');
+        expect(ctrlScope.noteSequence).toEqual([{
+          note: {
+            baseNoteMidiNumber: 64,
+            offset: 0,
+            noteId: 'note_id_0',
+            noteStart: {
+              num: 1,
+              den: 1
+            }
+          }
+        }]);
+      }
+    );
 
     it('correctly handles duplicate removals', function() {
       expect(ctrlScope.noteSequence).toEqual([]);
@@ -210,11 +210,9 @@ describe('MusicNotesInput interaction', function() {
 });
 
 describe('Music phrase player service', function() {
-  beforeEach(module('oppia'));
-
   describe('music phrase player service', function() {
     var mpps = null;
-
+    beforeEach(module('oppia', GLOBALS.TRANSLATOR_PROVIDER_FOR_TESTS));
     beforeEach(inject(function($injector, $window) {
       mpps = $injector.get('musicPhrasePlayerService');
       // This is here so that, if the test environment is modified
@@ -241,13 +239,14 @@ describe('Music phrase player service', function() {
     }));
 
     it('should stop any existing playthroughs when a new play is requested',
-        function() {
-      mpps.playMusicPhrase([]);
-      expect(MIDI.Player.stop).toHaveBeenCalled();
-    });
+      function() {
+        mpps.playMusicPhrase([]);
+        expect(MIDI.Player.stop).toHaveBeenCalled();
+      }
+    );
 
     it('should play all the notes in a music phrase',
-        inject(function($timeout) {
+    inject(function($timeout) {
       mpps.playMusicPhrase([{
         midiValue: 69,
         duration: 2,

@@ -35,6 +35,7 @@ class ExplorationRightsTests(test_utils.GenericTestBase):
         self.signup('d@example.com', 'D')
         self.signup('e@example.com', 'E')
         self.signup(self.ADMIN_EMAIL, username=self.ADMIN_USERNAME)
+        self.signup(self.MODERATOR_EMAIL, username=self.MODERATOR_USERNAME)
 
         self.user_id_a = self.get_user_id_from_email('a@example.com')
         self.user_id_b = self.get_user_id_from_email('b@example.com')
@@ -42,8 +43,11 @@ class ExplorationRightsTests(test_utils.GenericTestBase):
         self.user_id_d = self.get_user_id_from_email('d@example.com')
         self.user_id_e = self.get_user_id_from_email('e@example.com')
         self.user_id_admin = self.get_user_id_from_email(self.ADMIN_EMAIL)
+        self.user_id_moderator = self.get_user_id_from_email(
+            self.MODERATOR_EMAIL)
 
         self.set_admins([self.ADMIN_USERNAME])
+        self.set_moderators([self.MODERATOR_USERNAME])
 
     def test_get_exploration_rights_for_nonexistent_exploration(self):
         non_exp_id = 'this_exp_does_not_exist_id'
@@ -65,29 +69,42 @@ class ExplorationRightsTests(test_utils.GenericTestBase):
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '1'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '1'))
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '1'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '1'))
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '1'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '1'))
         self.assertFalse(
             rights_manager.Actor(self.user_id_a).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '1'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '1'))
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '1'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '1'))
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '1'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '1'))
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '1'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '1'))
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '1'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '1'))
+
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_play(
+                feconf.ACTIVITY_TYPE_EXPLORATION, '1'))
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_view(
+                feconf.ACTIVITY_TYPE_EXPLORATION, '1'))
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_edit(
+                feconf.ACTIVITY_TYPE_EXPLORATION, '1'))
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_delete(
+                feconf.ACTIVITY_TYPE_EXPLORATION, '1'))
 
     def test_non_splash_page_demo_exploration(self):
         # Note: there is no difference between permissions for demo
@@ -98,33 +115,45 @@ class ExplorationRightsTests(test_utils.GenericTestBase):
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '3'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '3'))
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '3'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '3'))
         self.assertTrue(rights_manager.Actor(
             self.user_id_a).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '3'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '3'))
         self.assertFalse(rights_manager.Actor(
             self.user_id_a).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '3'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '3'))
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '3'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '3'))
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '3'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '3'))
         self.assertTrue(rights_manager.Actor(
             self.user_id_admin).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '3'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '3'))
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, '3'))
+                feconf.ACTIVITY_TYPE_EXPLORATION, '3'))
+
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_play(
+                feconf.ACTIVITY_TYPE_EXPLORATION, '3'))
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_view(
+                feconf.ACTIVITY_TYPE_EXPLORATION, '3'))
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_edit(
+                feconf.ACTIVITY_TYPE_EXPLORATION, '3'))
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_delete(
+                feconf.ACTIVITY_TYPE_EXPLORATION, '3'))
 
     def test_ownership_of_exploration(self):
-        exp = exp_domain.Exploration.create_default_exploration(
-            self.EXP_ID, 'A title', 'A category')
+        exp = exp_domain.Exploration.create_default_exploration(self.EXP_ID)
         exp_services.save_new_exploration(self.user_id_a, exp)
 
         rights_manager.assign_role_for_exploration(
@@ -133,76 +162,87 @@ class ExplorationRightsTests(test_utils.GenericTestBase):
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).is_owner(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).is_owner(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         self.assertFalse(
             rights_manager.Actor(self.user_id_admin).is_owner(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
     def test_newly_created_exploration(self):
-        exp = exp_domain.Exploration.create_default_exploration(
-            self.EXP_ID, 'A title', 'A category')
+        exp = exp_domain.Exploration.create_default_exploration(self.EXP_ID)
         exp_services.save_new_exploration(self.user_id_a, exp)
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
-        self.assertFalse(
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+        self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_admin).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_play(
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_view(
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+        self.assertFalse(
+            rights_manager.Actor(self.user_id_moderator).can_edit(
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+        self.assertFalse(
+            rights_manager.Actor(self.user_id_moderator).can_delete(
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
     def test_inviting_collaborator_to_exploration(self):
-        exp = exp_domain.Exploration.create_default_exploration(
-            self.EXP_ID, 'A title', 'A category')
+        exp = exp_domain.Exploration.create_default_exploration(self.EXP_ID)
         exp_services.save_new_exploration(self.user_id_a, exp)
 
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         rights_manager.assign_role_for_exploration(
             self.user_id_a, self.EXP_ID, self.user_id_b,
@@ -210,34 +250,33 @@ class ExplorationRightsTests(test_utils.GenericTestBase):
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
     def test_inviting_playtester_to_exploration(self):
-        exp = exp_domain.Exploration.create_default_exploration(
-            self.EXP_ID, 'A title', 'A category')
+        exp = exp_domain.Exploration.create_default_exploration(self.EXP_ID)
         exp_services.save_new_exploration(self.user_id_a, exp)
 
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         rights_manager.assign_role_for_exploration(
             self.user_id_a, self.EXP_ID, self.user_id_b,
@@ -245,20 +284,19 @@ class ExplorationRightsTests(test_utils.GenericTestBase):
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
     def test_setting_rights_of_exploration(self):
-        exp = exp_domain.Exploration.create_default_exploration(
-            self.EXP_ID, 'A title', 'A category')
+        exp = exp_domain.Exploration.create_default_exploration(self.EXP_ID)
         exp_services.save_new_exploration(self.user_id_a, exp)
 
         rights_manager.assign_role_for_exploration(
@@ -295,96 +333,96 @@ class ExplorationRightsTests(test_utils.GenericTestBase):
 
     def test_publishing_and_unpublishing_exploration(self):
         exp = exp_domain.Exploration.create_default_exploration(
-            self.EXP_ID, 'A title', 'A category')
+            self.EXP_ID, title='A title', category='A category')
         exp_services.save_new_exploration(self.user_id_a, exp)
 
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         rights_manager.publish_exploration(self.user_id_a, self.EXP_ID)
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_a).can_unpublish(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         rights_manager.unpublish_exploration(self.user_id_admin, self.EXP_ID)
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
     def test_can_only_delete_unpublished_explorations(self):
         exp = exp_domain.Exploration.create_default_exploration(
-            self.EXP_ID, 'A title', 'A category')
+            self.EXP_ID, title='A title', category='A category')
         exp_services.save_new_exploration(self.user_id_a, exp)
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         rights_manager.publish_exploration(self.user_id_a, self.EXP_ID)
 
         self.assertFalse(
             rights_manager.Actor(self.user_id_a).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         rights_manager.unpublish_exploration(self.user_id_admin, self.EXP_ID)
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
     def test_can_publicize_exploration(self):
         exp = exp_domain.Exploration.create_default_exploration(
-            self.EXP_ID, 'A title', 'A category')
+            self.EXP_ID, title='A title', category='A category')
         exp_services.save_new_exploration(self.user_id_a, exp)
 
         rights_manager.publish_exploration(self.user_id_a, self.EXP_ID)
 
         self.assertFalse(
             rights_manager.Actor(self.user_id_a).can_publicize(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_publicize(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
     def test_changing_viewability_of_exploration(self):
         exp = exp_domain.Exploration.create_default_exploration(
-            self.EXP_ID, 'A title', 'A category')
+            self.EXP_ID, title='A title', category='A category')
         exp_services.save_new_exploration(self.user_id_a, exp)
 
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         self.assertTrue(rights_manager.Actor(
             self.user_id_a).can_change_private_viewability(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(rights_manager.Actor(
             self.user_id_b).can_change_private_viewability(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertTrue(rights_manager.Actor(
             self.user_id_admin).can_change_private_viewability(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         with self.assertRaisesRegexp(Exception, 'already the current value'):
             rights_manager.set_private_viewability_of_exploration(
@@ -397,35 +435,35 @@ class ExplorationRightsTests(test_utils.GenericTestBase):
             self.user_id_a, self.EXP_ID, True)
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         rights_manager.set_private_viewability_of_exploration(
             self.user_id_a, self.EXP_ID, False)
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         rights_manager.publish_exploration(self.user_id_a, self.EXP_ID)
         self.assertFalse(rights_manager.Actor(
             self.user_id_a).can_change_private_viewability(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
         rights_manager.unpublish_exploration(self.user_id_admin, self.EXP_ID)
         self.assertTrue(rights_manager.Actor(
             self.user_id_a).can_change_private_viewability(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertFalse(rights_manager.Actor(
             self.user_id_b).can_change_private_viewability(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
         self.assertTrue(rights_manager.Actor(
             self.user_id_admin).can_change_private_viewability(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
+                feconf.ACTIVITY_TYPE_EXPLORATION, self.EXP_ID))
 
 
 class CollectionRightsTests(test_utils.GenericTestBase):
@@ -442,6 +480,7 @@ class CollectionRightsTests(test_utils.GenericTestBase):
         self.signup('d@example.com', 'D')
         self.signup('e@example.com', 'E')
         self.signup(self.ADMIN_EMAIL, username=self.ADMIN_USERNAME)
+        self.signup(self.MODERATOR_EMAIL, username=self.MODERATOR_USERNAME)
 
         self.user_id_a = self.get_user_id_from_email('a@example.com')
         self.user_id_b = self.get_user_id_from_email('b@example.com')
@@ -449,8 +488,11 @@ class CollectionRightsTests(test_utils.GenericTestBase):
         self.user_id_d = self.get_user_id_from_email('d@example.com')
         self.user_id_e = self.get_user_id_from_email('e@example.com')
         self.user_id_admin = self.get_user_id_from_email(self.ADMIN_EMAIL)
+        self.user_id_moderator = self.get_user_id_from_email(
+            self.MODERATOR_EMAIL)
 
         self.set_admins([self.ADMIN_USERNAME])
+        self.set_moderators([self.MODERATOR_USERNAME])
 
     def test_get_collection_rights_for_nonexistent_collection(self):
         non_col_id = 'this_collection_does_not_exist_id'
@@ -472,29 +514,42 @@ class CollectionRightsTests(test_utils.GenericTestBase):
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_play(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, '0'))
+                feconf.ACTIVITY_TYPE_COLLECTION, '0'))
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_view(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, '0'))
+                feconf.ACTIVITY_TYPE_COLLECTION, '0'))
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_edit(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, '0'))
+                feconf.ACTIVITY_TYPE_COLLECTION, '0'))
         self.assertFalse(
             rights_manager.Actor(self.user_id_a).can_delete(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, '0'))
+                feconf.ACTIVITY_TYPE_COLLECTION, '0'))
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_play(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, '0'))
+                feconf.ACTIVITY_TYPE_COLLECTION, '0'))
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_view(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, '0'))
+                feconf.ACTIVITY_TYPE_COLLECTION, '0'))
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_edit(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, '0'))
+                feconf.ACTIVITY_TYPE_COLLECTION, '0'))
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_delete(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, '0'))
+                feconf.ACTIVITY_TYPE_COLLECTION, '0'))
+
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_play(
+                feconf.ACTIVITY_TYPE_COLLECTION, '0'))
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_view(
+                feconf.ACTIVITY_TYPE_COLLECTION, '0'))
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_edit(
+                feconf.ACTIVITY_TYPE_COLLECTION, '0'))
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_delete(
+                feconf.ACTIVITY_TYPE_COLLECTION, '0'))
 
     def test_ownership_of_collection(self):
         self.save_new_default_collection(self.COLLECTION_ID, self.user_id_a)
@@ -503,58 +558,79 @@ class CollectionRightsTests(test_utils.GenericTestBase):
             self.user_id_a, self.COLLECTION_ID, self.user_id_b,
             rights_manager.ROLE_EDITOR)
 
+        self.assertListEqual(['A'],
+                             rights_manager.get_collection_owner_names(
+                                 self.COLLECTION_ID))
+
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).is_owner(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).is_owner(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
         self.assertFalse(
             rights_manager.Actor(self.user_id_admin).is_owner(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
     def test_newly_created_collection(self):
         self.save_new_default_collection(self.COLLECTION_ID, self.user_id_a)
 
+        self.assertListEqual(['A'],
+                             rights_manager.get_collection_owner_names(
+                                 self.COLLECTION_ID))
+
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_play(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_view(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_edit(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_delete(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_play(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_view(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
-        self.assertFalse(
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+        self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_edit(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_admin).can_delete(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_play(
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+        self.assertTrue(
+            rights_manager.Actor(self.user_id_moderator).can_view(
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+        self.assertFalse(
+            rights_manager.Actor(self.user_id_moderator).can_edit(
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+        self.assertFalse(
+            rights_manager.Actor(self.user_id_moderator).can_delete(
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
     def test_inviting_collaborator_to_collection(self):
         self.save_new_valid_collection(
@@ -564,34 +640,34 @@ class CollectionRightsTests(test_utils.GenericTestBase):
         # Verify initial editor permissions for the collection.
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
         # Verify initial editor permissions for the exploration within the
         # collection.
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
 
         # User A adds user B to the collection as an editor.
@@ -599,37 +675,42 @@ class CollectionRightsTests(test_utils.GenericTestBase):
             self.user_id_a, self.COLLECTION_ID, self.user_id_b,
             rights_manager.ROLE_EDITOR)
 
+        # Ensure User A is the only user in the owner names list.
+        self.assertListEqual(['A'],
+                             rights_manager.get_collection_owner_names(
+                                 self.COLLECTION_ID))
+
         # Ensure User B is now an editor of the collection.
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
         # Ensure User B is not an editor of the exploration within the
         # collection.
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
 
     def test_inviting_playtester_to_collection(self):
@@ -640,34 +721,34 @@ class CollectionRightsTests(test_utils.GenericTestBase):
         # Verify initial viewer permissions for the collection.
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
         # Verify initial viewer permissions for the exploration within the
         # collection.
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
 
         # User A adds user B to the collection as a viewer.
@@ -678,34 +759,34 @@ class CollectionRightsTests(test_utils.GenericTestBase):
         # Ensure User B is now a viewer of the collection.
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
         # Ensure User B cannot view the exploration just because he/she has
         # access to the collection containing it.
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_edit(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_delete(
-                rights_manager.ACTIVITY_TYPE_EXPLORATION,
+                feconf.ACTIVITY_TYPE_EXPLORATION,
                 self.EXP_ID_FOR_COLLECTION))
 
     def test_setting_rights_of_collection(self):
@@ -748,58 +829,58 @@ class CollectionRightsTests(test_utils.GenericTestBase):
 
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
         rights_manager.publish_collection(self.user_id_a, self.COLLECTION_ID)
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_a).can_unpublish(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
         rights_manager.unpublish_collection(
             self.user_id_admin, self.COLLECTION_ID)
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_play(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_view(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_play(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertFalse(
             rights_manager.Actor(self.user_id_b).can_view(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
     def test_can_only_delete_unpublished_collections(self):
         self.save_new_default_collection(self.COLLECTION_ID, self.user_id_a)
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_delete(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
         rights_manager.publish_collection(self.user_id_a, self.COLLECTION_ID)
 
         self.assertFalse(
             rights_manager.Actor(self.user_id_a).can_delete(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
         rights_manager.unpublish_collection(
             self.user_id_admin, self.COLLECTION_ID)
 
         self.assertTrue(
             rights_manager.Actor(self.user_id_a).can_delete(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
 
     def test_can_publicize_collection(self):
         self.save_new_default_collection(self.COLLECTION_ID, self.user_id_a)
@@ -808,7 +889,7 @@ class CollectionRightsTests(test_utils.GenericTestBase):
 
         self.assertFalse(
             rights_manager.Actor(self.user_id_a).can_publicize(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
         self.assertTrue(
             rights_manager.Actor(self.user_id_admin).can_publicize(
-                rights_manager.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))
+                feconf.ACTIVITY_TYPE_COLLECTION, self.COLLECTION_ID))

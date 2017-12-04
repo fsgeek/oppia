@@ -34,22 +34,22 @@ describe('Expression parser service', function() {
       [false, 'false'],
 
       [['#', 'abc'],
-          'abc'],
+       'abc'],
       [['#', 'あいうえお'],
-          'あいうえお'],
+       'あいうえお'],
       [['abc'],
-          'abc()'],
+       'abc()'],
       [['abc', 1],
-          'abc(1)'],
+       'abc(1)'],
       [['abc', 1, 2],
-          'abc(1, 2)'],
+       'abc(1, 2)'],
       [[[['abc', 1, 2]], 3],
-          'abc(1, 2)()(3)'],
+       'abc(1, 2)()(3)'],
 
       [['+', 10],
-          '+10'],
+       '+10'],
       [['-', ['#', 'abc']],
-          '-abc'],
+       '-abc'],
       [['-', 0.35], '-.35'],
 
       [['+', 1, 2], '1     +    2'],
@@ -57,12 +57,12 @@ describe('Expression parser service', function() {
       [['+', 1, 2], '\t1 +　2 '],
 
       [['*', ['/', 3, 4], 5],
-          '3 / 4 * 5'],
+       '3 / 4 * 5'],
       [['-', ['+', 2, ['*', ['/', 3, 4], 5]], 6],
-          '2 + 3 / 4 * 5 - 6'],
+       '2 + 3 / 4 * 5 - 6'],
 
       [['||', ['&&', ['<', 2, 3], ['==', 4, 6]], true],
-          '2 < 3 && 4 == 6 || true'],
+       '2 < 3 && 4 == 6 || true'],
 
       // Expected to produce parser error.
       [undefined, 'a1a-'],
@@ -83,7 +83,7 @@ describe('Expression parser service', function() {
         var parsed = eps.parse(expression);
         parsedJson = JSON.stringify(parsed);
         var expectedJson = JSON.stringify(expected);
-        if (expected === undefined || parsedJson != expectedJson) {
+        if (expected === undefined || parsedJson !== expectedJson) {
           console.error('input    : ' + expression);
           console.error('parsed   : ' + parsedJson);
           console.error('expected : ' + expectedJson);

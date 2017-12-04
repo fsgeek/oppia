@@ -25,7 +25,9 @@ oppia.directive('oppiaInteractiveItemSelectionInput', [
       oppiaHtmlEscaper, itemSelectionInputRulesService) {
     return {
       restrict: 'E',
-      scope: {},
+      scope: {
+        onSubmit: '&'
+      },
       templateUrl: 'interaction/ItemSelectionInput',
       controller: ['$scope', '$attrs', function($scope, $attrs) {
         $scope.choices = oppiaHtmlEscaper.escapedJsonToObj(
@@ -52,7 +54,7 @@ oppia.directive('oppiaInteractiveItemSelectionInput', [
 
         // The following indicates that the number of answers is less than
         // minAllowableSelectionCount.
-        $scope.notEnoughSelections = true;
+        $scope.notEnoughSelections = ($scope.minAllowableSelectionCount > 0);
 
         $scope.onToggleCheckbox = function() {
           $scope.newQuestion = false;
@@ -67,6 +69,11 @@ oppia.directive('oppiaInteractiveItemSelectionInput', [
             $scope.selectionCount < $scope.minAllowableSelectionCount);
         };
 
+        $scope.submitMultipleChoiceAnswer = function(index) {
+          $scope.userSelections[$scope.choices[index]] = true;
+          $scope.submitAnswer($scope.userSelections);
+        };
+
         $scope.submitAnswer = function() {
           var answers = Object.keys($scope.userSelections).filter(
             function(obj) {
@@ -74,7 +81,10 @@ oppia.directive('oppiaInteractiveItemSelectionInput', [
             }
           );
 
-          $scope.$parent.submitAnswer(answers, itemSelectionInputRulesService);
+          $scope.onSubmit({
+            answer: answers,
+            rulesService: itemSelectionInputRulesService
+          });
         };
       }]
     };
@@ -112,16 +122,16 @@ oppia.factory('itemSelectionInputRulesService', ['$filter', function($filter) {
     Equals: function(answer, inputs) {
       var normalizedAnswer = $filter('removeDuplicatesInArray')(answer);
       var normalizedInput = $filter('removeDuplicatesInArray')(inputs.x);
-      return normalizedAnswer.length == normalizedInput.length &&
+      return normalizedAnswer.length === normalizedInput.length &&
           normalizedAnswer.every(function(val) {
-        return normalizedInput.indexOf(val) != -1;
-      });
+            return normalizedInput.indexOf(val) !== -1;
+          });
     },
     ContainsAtLeastOneOf: function(answer, inputs) {
       var normalizedAnswer = $filter('removeDuplicatesInArray')(answer);
       var normalizedInput = $filter('removeDuplicatesInArray')(inputs.x);
       return normalizedAnswer.some(function(val) {
-        return normalizedInput.indexOf(val) != -1;
+        return normalizedInput.indexOf(val) !== -1;
       });
     },
     // TODO(wxy): migrate the name of this rule to OmitsAtLeastOneOf, keeping in
@@ -130,7 +140,7 @@ oppia.factory('itemSelectionInputRulesService', ['$filter', function($filter) {
       var normalizedAnswer = $filter('removeDuplicatesInArray')(answer);
       var normalizedInput = $filter('removeDuplicatesInArray')(inputs.x);
       return normalizedInput.some(function(val) {
-        return normalizedAnswer.indexOf(val) == -1;
+        return normalizedAnswer.indexOf(val) === -1;
       });
     }
   };

@@ -20,17 +20,23 @@
  * followed by the name of the arg.
  */
 oppia.directive('oppiaInteractiveContinue', [
-  'oppiaHtmlEscaper', function(oppiaHtmlEscaper) {
+  'oppiaHtmlEscaper', 'continueRulesService',
+  function(oppiaHtmlEscaper, continueRulesService) {
     return {
       restrict: 'E',
-      scope: {},
+      scope: {
+        onSubmit: '&'
+      },
       templateUrl: 'interaction/Continue',
       controller: ['$scope', '$attrs', function($scope, $attrs) {
         $scope.buttonText = oppiaHtmlEscaper.escapedJsonToObj(
           $attrs.buttonTextWithValue);
 
         $scope.submitAnswer = function() {
-          $scope.$parent.$parent.submitAnswer('(' + $scope.buttonText + ')');
+          $scope.onSubmit({
+            answer: '(' + $scope.buttonText + ')',
+            rulesService: continueRulesService
+          });
         };
       }]
     };
@@ -42,10 +48,11 @@ oppia.directive('oppiaResponseContinue', [function() {
     restrict: 'E',
     scope: {},
     templateUrl: 'response/Continue',
-    controller: ['$scope', '$attrs', 'oppiaHtmlEscaper',
-        function($scope, $attrs, oppiaHtmlEscaper) {
-      $scope.answer = oppiaHtmlEscaper.escapedJsonToObj($attrs.answer);
-    }]
+    controller: [
+      '$scope', '$attrs', 'oppiaHtmlEscaper',
+      function($scope, $attrs, oppiaHtmlEscaper) {
+        $scope.answer = oppiaHtmlEscaper.escapedJsonToObj($attrs.answer);
+      }]
   };
 }]);
 
@@ -54,9 +61,14 @@ oppia.directive('oppiaShortResponseContinue', [function() {
     restrict: 'E',
     scope: {},
     templateUrl: 'shortResponse/Continue',
-    controller: ['$scope', '$attrs', 'oppiaHtmlEscaper',
-        function($scope, $attrs, oppiaHtmlEscaper) {
-      $scope.answer = oppiaHtmlEscaper.escapedJsonToObj($attrs.answer);
-    }]
+    controller: [
+      '$scope', '$attrs', 'oppiaHtmlEscaper',
+      function($scope, $attrs, oppiaHtmlEscaper) {
+        $scope.answer = oppiaHtmlEscaper.escapedJsonToObj($attrs.answer);
+      }]
   };
+}]);
+
+oppia.factory('continueRulesService', [function() {
+  return {};
 }]);

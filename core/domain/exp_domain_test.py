@@ -46,6 +46,7 @@ skin_customizations:
     bottom: []
 states:
   %s:
+    classifier_model_id: null
     content:
     - type: text
       value: ''
@@ -61,6 +62,7 @@ states:
       id: null
     param_changes: []
   New state:
+    classifier_model_id: null
     content:
     - type: text
       value: ''
@@ -176,6 +178,7 @@ skin_customizations:
           - Second state
 states:
   %s:
+    classifier_model_id: null
     content:
     - type: text
       value: ''
@@ -195,6 +198,7 @@ states:
       id: TextInput
     param_changes: []
   New state:
+    classifier_model_id: null
     content:
     - type: text
       value: ''
@@ -214,6 +218,7 @@ states:
       id: TextInput
     param_changes: []
   Second state:
+    classifier_model_id: null
     content:
     - type: text
       value: ''
@@ -272,21 +277,14 @@ class ExplorationDomainUnitTests(test_utils.GenericTestBase):
     # unit tests. Also, all validation errors should be covered in the tests.
     def test_validation(self):
         """Test validation of explorations."""
-        exploration = exp_domain.Exploration.create_default_exploration(
-            'exp_id', '', '')
+        exploration = exp_domain.Exploration.create_default_exploration('eid')
         exploration.init_state_name = ''
         exploration.states = {}
-
-        self._assert_validation_error(
-            exploration, 'between 1 and 50 characters')
 
         exploration.title = 'Hello #'
         self._assert_validation_error(exploration, 'Invalid character #')
 
         exploration.title = 'Title'
-        self._assert_validation_error(
-            exploration, 'between 1 and 50 characters')
-
         exploration.category = 'Category'
 
         # Note: If '/' ever becomes a valid state name, ensure that the rule
@@ -334,7 +332,7 @@ class ExplorationDomainUnitTests(test_utils.GenericTestBase):
         default_outcome.dest = exploration.init_state_name
         exploration.validate()
 
-        # Ensure an answer group with two fuzzy rules is invalid
+        # Ensure an answer group with two classifier rules is invalid
         init_state.interaction.answer_groups.append(
             exp_domain.AnswerGroup.from_dict({
                 'outcome': {
@@ -352,12 +350,13 @@ class ExplorationDomainUnitTests(test_utils.GenericTestBase):
                         'training_data': ['Test']
                     },
                     'rule_type': 'FuzzyMatches'
-                }]
+                }],
+                'correct': False,
             })
         )
 
         self._assert_validation_error(
-            exploration, 'AnswerGroups can only have one fuzzy rule.')
+            exploration, 'AnswerGroups can only have one classifier rule.')
 
         # Restore a valid exploration.
         init_state.interaction.answer_groups.pop()
@@ -383,7 +382,8 @@ class ExplorationDomainUnitTests(test_utils.GenericTestBase):
                         'x': 'Test'
                     },
                     'rule_type': 'Contains'
-                }]
+                }],
+                'correct': False,
             })
         )
         exploration.validate()
@@ -567,8 +567,7 @@ class ExplorationDomainUnitTests(test_utils.GenericTestBase):
 
     def test_fallbacks_validation(self):
         """Test validation of state fallbacks."""
-        exploration = exp_domain.Exploration.create_default_exploration(
-            'exp_id', 'Title', 'Category')
+        exploration = exp_domain.Exploration.create_default_exploration('eid')
         exploration.objective = 'Objective'
         init_state = exploration.states[exploration.init_state_name]
         init_state.update_interaction_id('TextInput')
@@ -664,8 +663,7 @@ class ExplorationDomainUnitTests(test_utils.GenericTestBase):
 
     def test_tag_validation(self):
         """Test validation of exploration tags."""
-        exploration = exp_domain.Exploration.create_default_exploration(
-            'exp_id', 'Title', 'Category')
+        exploration = exp_domain.Exploration.create_default_exploration('eid')
         exploration.objective = 'Objective'
         init_state = exploration.states[exploration.init_state_name]
         init_state.update_interaction_id('EndExploration')
@@ -851,13 +849,27 @@ class ExplorationDomainUnitTests(test_utils.GenericTestBase):
             ['AnotherGadget', 'TestGadget']
         )
 
-    def test_objective_validation(self):
-        """Test that objectives are validated only in 'strict' mode."""
+    def test_title_category_and_objective_validation(self):
+        """Test that titles, categories and objectives are validated only in
+        'strict' mode.
+        """
         self.save_new_valid_exploration(
-            'exp_id', 'user@example.com', title='Title', category='Category',
+            'exp_id', 'user@example.com', title='', category='',
             objective='', end_state_name='End')
         exploration = exp_services.get_exploration_by_id('exp_id')
         exploration.validate()
+
+        with self.assertRaisesRegexp(
+            utils.ValidationError, 'title must be specified'
+            ):
+            exploration.validate(strict=True)
+        exploration.title = 'A title'
+
+        with self.assertRaisesRegexp(
+            utils.ValidationError, 'category must be specified'
+            ):
+            exploration.validate(strict=True)
+        exploration.category = 'A category'
 
         with self.assertRaisesRegexp(
             utils.ValidationError, 'objective must be specified'
@@ -870,24 +882,20 @@ class ExplorationDomainUnitTests(test_utils.GenericTestBase):
 
     def test_is_demo_property(self):
         """Test the is_demo property."""
-        demo = exp_domain.Exploration.create_default_exploration(
-            '0', 'title', 'category')
+        demo = exp_domain.Exploration.create_default_exploration('0')
         self.assertEqual(demo.is_demo, True)
 
-        notdemo1 = exp_domain.Exploration.create_default_exploration(
-            'a', 'title', 'category')
+        notdemo1 = exp_domain.Exploration.create_default_exploration('a')
         self.assertEqual(notdemo1.is_demo, False)
 
-        notdemo2 = exp_domain.Exploration.create_default_exploration(
-            'abcd', 'title', 'category')
+        notdemo2 = exp_domain.Exploration.create_default_exploration('abcd')
         self.assertEqual(notdemo2.is_demo, False)
 
     def test_exploration_export_import(self):
         """Test that to_dict and from_dict preserve all data within an
         exploration.
         """
-        demo = exp_domain.Exploration.create_default_exploration(
-            '0', 'title', 'category')
+        demo = exp_domain.Exploration.create_default_exploration('0')
         demo_dict = demo.to_dict()
         exp_from_dict = exp_domain.Exploration.from_dict(demo_dict)
         self.assertEqual(exp_from_dict.to_dict(), demo_dict)
@@ -897,8 +905,7 @@ class ExplorationDomainUnitTests(test_utils.GenericTestBase):
         being false.
         """
         # Default exploration has a default interaction with an ID of None.
-        demo = exp_domain.Exploration.create_default_exploration(
-            '0', 'title', 'category')
+        demo = exp_domain.Exploration.create_default_exploration('0')
         init_state = demo.states[feconf.DEFAULT_INIT_STATE_NAME]
         self.assertFalse(init_state.interaction.is_terminal)
 
@@ -909,11 +916,12 @@ class StateExportUnitTests(test_utils.GenericTestBase):
     def test_export_state_to_dict(self):
         """Test exporting a state to a dict."""
         exploration = exp_domain.Exploration.create_default_exploration(
-            'A different exploration_id', 'Title', 'Category')
+            'exp_id')
         exploration.add_states(['New state'])
 
         state_dict = exploration.states['New state'].to_dict()
         expected_dict = {
+            'classifier_model_id': None,
             'content': [{
                 'type': 'text',
                 'value': u''
@@ -943,7 +951,7 @@ class YamlCreationUnitTests(test_utils.GenericTestBase):
     def test_yaml_import_and_export(self):
         """Test the from_yaml() and to_yaml() methods."""
         exploration = exp_domain.Exploration.create_default_exploration(
-            self.EXP_ID, 'Title', 'Category')
+            self.EXP_ID, title='Title', category='Category')
         exploration.add_states(['New state'])
         self.assertEqual(len(exploration.states), 2)
 
@@ -1736,8 +1744,170 @@ states_schema_version: 7
 tags: []
 title: Title
 """)
-
-    _LATEST_YAML_CONTENT = YAML_CONTENT_V10
+    YAML_CONTENT_V11 = ("""author_notes: ''
+blurb: ''
+category: Category
+init_state_name: (untitled state)
+language_code: en
+objective: ''
+param_changes: []
+param_specs: {}
+schema_version: 11
+skin_customizations:
+  panels_contents:
+    bottom: []
+states:
+  (untitled state):
+    classifier_model_id: null
+    content:
+    - type: text
+      value: ''
+    interaction:
+      answer_groups:
+      - outcome:
+          dest: END
+          feedback:
+          - Correct!
+          param_changes: []
+        rule_specs:
+        - inputs:
+            x: InputString
+          rule_type: Equals
+      confirmed_unclassified_answers: []
+      customization_args:
+        placeholder:
+          value: ''
+        rows:
+          value: 1
+      default_outcome:
+        dest: (untitled state)
+        feedback: []
+        param_changes: []
+      fallbacks: []
+      id: TextInput
+    param_changes: []
+  END:
+    classifier_model_id: null
+    content:
+    - type: text
+      value: Congratulations, you have finished!
+    interaction:
+      answer_groups: []
+      confirmed_unclassified_answers: []
+      customization_args:
+        recommendedExplorationIds:
+          value: []
+      default_outcome: null
+      fallbacks: []
+      id: EndExploration
+    param_changes: []
+  New state:
+    classifier_model_id: null
+    content:
+    - type: text
+      value: ''
+    interaction:
+      answer_groups: []
+      confirmed_unclassified_answers: []
+      customization_args:
+        placeholder:
+          value: ''
+        rows:
+          value: 1
+      default_outcome:
+        dest: END
+        feedback: []
+        param_changes: []
+      fallbacks: []
+      id: TextInput
+    param_changes: []
+states_schema_version: 8
+tags: []
+title: Title
+""")
+    YAML_CONTENT_V12 = ("""author_notes: ''
+blurb: ''
+category: Category
+init_state_name: (untitled state)
+language_code: en
+objective: ''
+param_changes: []
+param_specs: {}
+schema_version: 12
+skin_customizations:
+  panels_contents:
+    bottom: []
+states:
+  (untitled state):
+    classifier_model_id: null
+    content:
+    - type: text
+      value: ''
+    interaction:
+      answer_groups:
+      - correct: false
+        outcome:
+          dest: END
+          feedback:
+          - Correct!
+          param_changes: []
+        rule_specs:
+        - inputs:
+            x: InputString
+          rule_type: Equals
+      confirmed_unclassified_answers: []
+      customization_args:
+        placeholder:
+          value: ''
+        rows:
+          value: 1
+      default_outcome:
+        dest: (untitled state)
+        feedback: []
+        param_changes: []
+      fallbacks: []
+      id: TextInput
+    param_changes: []
+  END:
+    classifier_model_id: null
+    content:
+    - type: text
+      value: Congratulations, you have finished!
+    interaction:
+      answer_groups: []
+      confirmed_unclassified_answers: []
+      customization_args:
+        recommendedExplorationIds:
+          value: []
+      default_outcome: null
+      fallbacks: []
+      id: EndExploration
+    param_changes: []
+  New state:
+    classifier_model_id: null
+    content:
+    - type: text
+      value: ''
+    interaction:
+      answer_groups: []
+      confirmed_unclassified_answers: []
+      customization_args:
+        placeholder:
+          value: ''
+        rows:
+          value: 1
+      default_outcome:
+        dest: END
+        feedback: []
+        param_changes: []
+      fallbacks: []
+      id: TextInput
+    param_changes: []
+states_schema_version: 9
+tags: []
+title: Title
+""")
+    _LATEST_YAML_CONTENT = YAML_CONTENT_V12
 
     def test_load_from_v1(self):
         """Test direct loading from a v1 yaml file."""
@@ -1799,6 +1969,17 @@ title: Title
             'eid', self.YAML_CONTENT_V10)
         self.assertEqual(exploration.to_yaml(), self._LATEST_YAML_CONTENT)
 
+    def test_load_from_v11(self):
+        """Test direct loading from a v11 yaml file."""
+        exploration = exp_domain.Exploration.from_yaml(
+            'eid', self.YAML_CONTENT_V11)
+        self.assertEqual(exploration.to_yaml(), self._LATEST_YAML_CONTENT)
+
+    def test_load_from_v12(self):
+        """Test direct loading from a v12 yaml file."""
+        exploration = exp_domain.Exploration.from_yaml(
+            'eid', self.YAML_CONTENT_V12)
+        self.assertEqual(exploration.to_yaml(), self._LATEST_YAML_CONTENT)
 
 class ConversionUnitTests(test_utils.GenericTestBase):
     """Test conversion methods."""
@@ -1808,11 +1989,12 @@ class ConversionUnitTests(test_utils.GenericTestBase):
         second_state_name = 'first state'
 
         exploration = exp_domain.Exploration.create_default_exploration(
-            'eid', exp_title, 'Category')
+            'eid', title=exp_title, category='Category')
         exploration.add_states([second_state_name])
 
         def _get_default_state_dict(content_str, dest_name):
             return {
+                'classifier_model_id': None,
                 'content': [{
                     'type': 'text',
                     'value': content_str,
@@ -1847,6 +2029,7 @@ class ConversionUnitTests(test_utils.GenericTestBase):
             'skin_customizations': (
                 exp_domain.SkinInstance._get_default_skin_customizations()  # pylint: disable=protected-access
             ),
+            'language_code': 'en',
         })
 
 
@@ -1855,8 +2038,7 @@ class StateOperationsUnitTests(test_utils.GenericTestBase):
 
     def test_delete_state(self):
         """Test deletion of states."""
-        exploration = exp_domain.Exploration.create_default_exploration(
-            'eid', 'Title', 'Category')
+        exploration = exp_domain.Exploration.create_default_exploration('eid')
         exploration.add_states(['first state'])
 
         with self.assertRaisesRegexp(
@@ -1872,8 +2054,7 @@ class StateOperationsUnitTests(test_utils.GenericTestBase):
 
     def test_state_operations(self):
         """Test adding, updating and checking existence of states."""
-        exploration = exp_domain.Exploration.create_default_exploration(
-            'eid', 'Title', 'Category')
+        exploration = exp_domain.Exploration.create_default_exploration('eid')
         self.assertNotIn('invalid_state_name', exploration.states)
 
         self.assertEqual(len(exploration.states), 1)
@@ -1928,6 +2109,8 @@ class StateOperationsUnitTests(test_utils.GenericTestBase):
         exploration.states['State 2'].update_interaction_id('TextInput')
 
         # Other miscellaneous requirements for validation
+        exploration.title = 'Title'
+        exploration.category = 'Category'
         exploration.objective = 'Objective'
 
         # The exploration should NOT be terminable even though it has a state
@@ -1957,8 +2140,7 @@ class GadgetOperationsUnitTests(test_utils.GenericTestBase):
 
     def test_gadget_operations(self):
         """Test deletion of gadgets."""
-        exploration = exp_domain.Exploration.create_default_exploration(
-            'eid', 'A title', 'A category')
+        exploration = exp_domain.Exploration.create_default_exploration('eid')
 
         with self.swap(feconf, 'ALLOWED_GADGETS', TEST_GADGETS):
             exploration.add_gadget(TEST_GADGET_DICT, 'bottom')

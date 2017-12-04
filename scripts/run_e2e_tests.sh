@@ -22,27 +22,36 @@
 #   bash scripts/run_e2e_tests.sh
 #
 # Optional arguments:
+#   --skip-install=true/false If true, skips installing dependencies. The
+#         default value is false.
 #   --sharding=true/false Disables/Enables parallelization of protractor tests.
-#   --sharding-instances=# Sets the number of parallel browsers to open while sharding.
+#   --sharding-instances=# Sets the number of parallel browsers to open while
+#         sharding.
+#   --prod_env Run the tests in prod mode. Static resources are served from
+#         build directory and use cache slugs.
 # Sharding must be disabled (either by passing in false to --sharding or 1 to
 # --sharding-instances) if running any tests in isolation (iit or ddescribe).
+#   --suite=suite_name Performs test for different suites.
+#   For performing a full test, no argument is required.
+#   For performing tests on editors, use --suite=editor
+#   For performing tests on extensions, use --suite=extensions
+#   For performing tests on library, use --suite=library
+#   For performing miscellaneous tests, use --suite=misc
 #
 # The root folder MUST be named 'oppia'.
 
 function cleanup {
   # Send a kill signal to the dev server.
-  #
-  # The [Pp] is to avoid the grep finding the 'grep protractor/selenium' process
-  # as well. The awk command gets just the process ID from the grepped line.
-  kill `ps aux | grep [Pp]rotractor/selenium | awk '{print $2}'`
+  kill `ps aux | grep "[Dd]ev_appserver.py --host=0.0.0.0 --port=9001" | awk '{print $2}'`
 
-  # Send a kill signal to the dev server.
-  kill `ps aux | grep "[Dd]ev_appserver.py --host=0.0.0.0 --port=4445" | awk '{print $2}'`
+  # The [Pp] is to avoid the grep finding the 'grep protractor/node_modules/webdriver-manager/selenium' process
+  # as well. The awk command gets just the process ID from the grepped line.
+  kill `ps aux | grep [Pp]rotractor/node_modules/webdriver-manager/selenium | awk '{print $2}'`
 
   # Wait for the servers to go down; suppress "connection refused" error output
   # from nc since that is exactly what we are expecting to happen.
   while ( nc -vz localhost 4444 >/dev/null 2>&1 ); do sleep 1; done
-  while ( nc -vz localhost 4445 >/dev/null 2>&1 ); do sleep 1; done
+  while ( nc -vz localhost 9001 >/dev/null 2>&1 ); do sleep 1; done
 
   if [ -d "../protractor-screenshots" ]; then
     echo ""
@@ -69,20 +78,9 @@ set -e
 source $(dirname $0)/setup.sh || exit 1
 source $(dirname $0)/setup_gae.sh || exit 1
 
-# Install third party dependencies
-bash scripts/install_third_party.sh
-
-install_node_module karma 0.12.16
-install_node_module karma-jasmine 0.1.0
-install_node_module karma-ng-html2js-preprocessor 0.1.0
-install_node_module protractor 2.5.0
-install_node_module protractor-screenshot-reporter 0.0.5
-install_node_module jasmine-spec-reporter 2.2.2
-
-$NODE_MODULE_DIR/.bin/webdriver-manager update
-
-#build so as to have minified js and css
-$NODE_PATH/bin/node $NODE_MODULE_DIR/gulp/bin/gulp.js build
+export DEFAULT_SKIP_INSTALLING_THIRD_PARTY_LIBS=false
+export DEFAULT_RUN_MINIFIED_TESTS=false
+maybeInstallDependencies "$@"
 
 if ( nc -vz localhost 8181 ); then
   echo ""
@@ -99,16 +97,33 @@ fi
 # the top of the file is run.
 trap cleanup EXIT
 
+
+# Argument passed to gulpfile.js to help build with minification.
+MINIFICATION=false
+for arg in "$@"; do
+  # Used to emulate running Oppia in a production environment.
+  if [ "$arg" == "--prod_env" ]; then
+    MINIFICATION=true
+    echo "  Generating files for production mode..."
+    $PYTHON_CMD scripts/build.py
+  fi
+done
+
+yaml_env_variable="MINIFICATION: $MINIFICATION"
+sed -i.bak -e s/"MINIFICATION: .*"/"$yaml_env_variable"/ app.yaml
+# Delete the modified yaml file(-i.bak)
+rm app.yaml.bak
+
 # Start a selenium process. The program sends thousands of lines of useless
 # info logs to stderr so we discard them.
 # TODO(jacob): Find a webdriver or selenium argument that controls log level.
 ($NODE_MODULE_DIR/.bin/webdriver-manager start 2>/dev/null)&
 # Start a demo server.
-($PYTHON_CMD $GOOGLE_APP_ENGINE_HOME/dev_appserver.py --host=0.0.0.0 --port=4445 --clear_datastore=yes --dev_appserver_log_level=critical --log_level=critical --skip_sdk_update_check=true .)&
+($PYTHON_CMD $GOOGLE_APP_ENGINE_HOME/dev_appserver.py --host=0.0.0.0 --port=9001 --clear_datastore=yes --dev_appserver_log_level=critical --log_level=critical --skip_sdk_update_check=true .)&
 
 # Wait for the servers to come up.
 while ! nc -vz localhost 4444; do sleep 1; done
-while ! nc -vz localhost 4445; do sleep 1; done
+while ! nc -vz localhost 9001; do sleep 1; done
 
 # Delete outdated screenshots
 if [ -d "../protractor-screenshots" ]; then
@@ -117,30 +132,41 @@ fi
 
 # Parse additional command line arguments that may be passed to protractor.
 # Credit: http://stackoverflow.com/questions/192249
+# Passing different suites and sharding parameters for tests.
+SUITE="full"
 SHARDING=true
 SHARD_INSTANCES=3
-for i in "$@"; do
+for j in "$@"; do
   # Match each space-separated argument passed to the shell file to a separate
-  # case label, based on a pattern. E.g. Match to -sharding=*, where the
+  # case label, based on a pattern. E.g. Match to -suite=*, -sharding=*, where the
   # asterisk refers to any characters following the equals sign, other than
   # whitespace.
-  case $i in
-    --sharding=*)
+  case $j in
+    --suite=*)
     # Extract the value right of the equal sign by substringing the $i variable
     # at the equal sign.
     # http://tldp.org/LDP/abs/html/string-manipulation.html
-    SHARDING="${i#*=}"
+    SUITE="${j#*=}"
     # Shifts the argument parameters over by one. E.g. $2 becomes $1, etc.
     shift
     ;;
 
+    --sharding=*)
+    SHARDING="${j#*=}"
+    shift
+    ;;
+
     --sharding-instances=*)
-    SHARD_INSTANCES="${i#*=}"
+    SHARD_INSTANCES="${j#*=}"
+    shift
+    ;;
+
+    --prod_env*)
     shift
     ;;
 
     *)
-    echo Error: Unknown command line option: $i
+    echo "Error: Unknown command line option: $j"
     ;;
   esac
 done
@@ -151,7 +177,7 @@ done
 # in at all.
 # TODO(bhenning): Figure out if this is a bug with protractor.
 if [ "$SHARDING" = "false" ] || [ "$SHARD_INSTANCES" = "1" ]; then
-  $NODE_MODULE_DIR/.bin/protractor core/tests/protractor.conf.js
+  $NODE_MODULE_DIR/.bin/protractor core/tests/protractor.conf.js --suite "$SUITE"
 else
-  $NODE_MODULE_DIR/.bin/protractor core/tests/protractor.conf.js --capabilities.shardTestFiles="$SHARDING" --capabilities.maxInstances=$SHARD_INSTANCES
+  $NODE_MODULE_DIR/.bin/protractor core/tests/protractor.conf.js --capabilities.shardTestFiles="$SHARDING" --capabilities.maxInstances=$SHARD_INSTANCES --suite "$SUITE"
 fi

@@ -59,11 +59,16 @@ class RteComponentUnitTests(test_utils.GenericTestBase):
             self.assertTrue(isinstance(ca_spec['description'], basestring))
             self.assertGreater(len(ca_spec['description']), 0)
 
+            # The default value might not pass validation checks (e.g. the
+            # Image component has a required field whose default value is
+            # empty). Thus, when checking the default value schema, we don't
+            # apply the custom validators.
             schema_utils_test.validate_schema(ca_spec['schema'])
             self.assertEqual(
                 ca_spec['default_value'],
                 schema_utils.normalize_against_schema(
-                    ca_spec['default_value'], ca_spec['schema']))
+                    ca_spec['default_value'], ca_spec['schema'],
+                    apply_custom_validators=False))
 
             if ca_spec['schema']['type'] == 'custom':
                 obj_class = obj_services.Registry.get_object_class_by_type(
@@ -119,14 +124,17 @@ class RteComponentUnitTests(test_utils.GenericTestBase):
             self.assertTrue(os.path.isdir(component_dir))
 
             # In this directory there should be a config .py file, an
-            # html file, a JS file, a .png file and a protractor.js file.
+            # html file, a JS file, an icon .png file and a protractor.js file,
+            # and an optional preview .png file.
             dir_contents = self._listdir_omit_ignored(component_dir)
-            self.assertLessEqual(len(dir_contents), 5)
+            self.assertLessEqual(len(dir_contents), 6)
 
             py_file = os.path.join(component_dir, '%s.py' % component_id)
             html_file = os.path.join(component_dir, '%s.html' % component_id)
             js_file = os.path.join(component_dir, '%s.js' % component_id)
             png_file = os.path.join(component_dir, '%s.png' % component_id)
+            preview_file = os.path.join(
+                component_dir, '%sPreview.png' % component_id)
             protractor_file = os.path.join(component_dir, 'protractor.js')
 
             self.assertTrue(os.path.isfile(py_file))
@@ -134,6 +142,8 @@ class RteComponentUnitTests(test_utils.GenericTestBase):
             self.assertTrue(os.path.isfile(js_file))
             self.assertTrue(os.path.isfile(png_file))
             self.assertTrue(os.path.isfile(protractor_file))
+            if len(dir_contents) == 6:
+                self.assertTrue(os.path.isfile(preview_file))
 
             js_file_content = utils.get_file_contents(js_file)
             html_file_content = utils.get_file_contents(html_file)

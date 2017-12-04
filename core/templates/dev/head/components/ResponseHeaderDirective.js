@@ -14,8 +14,6 @@
 
 /**
  * @fileoverview Directive for the header of the response tiles.
- *
- * @author sean@seanlip.org (Sean Lip)
  */
 
 oppia.directive('responseHeader', [function() {
@@ -27,7 +25,8 @@ oppia.directive('responseHeader', [function() {
       getSummary: '&summary',
       getShortSummary: '&shortSummary',
       isActive: '&isActive',
-      getOnDeleteFn: '&onDeleteFn'
+      getOnDeleteFn: '&onDeleteFn',
+      getNumRules: '&numRules'
     },
     templateUrl: 'components/responseHeader',
     controller: [

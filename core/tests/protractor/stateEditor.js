@@ -15,11 +15,10 @@
 /**
  * @fileoverview End-to-end tests of the interaction between the player and
  * editor.
- *
- * @author Jacob Davis (jacobdavis11@gmail.com)
  */
 
 var general = require('../protractor_utils/general.js');
+var interactions = require('../../../extensions/interactions/protractor.js');
 var forms = require('../protractor_utils/forms.js');
 var users = require('../protractor_utils/users.js');
 var workflow = require('../protractor_utils/workflow.js');
@@ -27,11 +26,29 @@ var editor = require('../protractor_utils/editor.js');
 var player = require('../protractor_utils/player.js');
 
 describe('State editor', function() {
-  it('should display plain text content', function() {
-    users.createUser('user1@example.com', 'user1');
-    users.login('user1@example.com');
+  it('should walk through the tutorial when user repeatedly clicks Next',
+    function() {
+      var NUM_TUTORIAL_STAGES = 7;
+      users.createUser(
+        'userTutorial@stateEditor.com', 'userTutorialStateEditor');
+      users.login('userTutorial@stateEditor.com');
 
-    workflow.createExploration('sums', 'maths');
+      workflow.createExplorationAndStartTutorial();
+      editor.startTutorial();
+      for (var i = 0; i < NUM_TUTORIAL_STAGES - 1; i++) {
+        editor.progressInTutorial();
+        general.waitForSystem();
+      }
+      editor.finishTutorial();
+      users.logout();
+    }
+  );
+
+  it('should display plain text content', function() {
+    users.createUser('user1@stateEditor.com', 'user1StateEditor');
+    users.login('user1@stateEditor.com');
+
+    workflow.createExploration();
     editor.setContent(forms.toRichText('plain text'));
     editor.setInteraction('Continue', 'click here');
     editor.setDefaultOutcome(null, 'final card', true);
@@ -51,31 +68,15 @@ describe('State editor', function() {
     users.logout();
   });
 
-  it('should walk through the tutorial when user repeatedly clicks Next',
-      function() {
-    var NUM_TUTORIAL_STAGES = 5;
-    users.createUser('user@example.com', 'user');
-    users.login('user@example.com');
-
-    workflow.createExplorationAndStartTutorial('sums', 'maths');
-    for (var i = 0; i < NUM_TUTORIAL_STAGES - 1; i++) {
-      editor.progressInTutorial();
-    }
-    editor.finishTutorial();
-    users.logout();
-  });
-
   it('should create content and multiple choice interactions', function() {
-    users.createUser('user2@example.com', 'user2');
-    users.login('user2@example.com');
-
-    workflow.createExploration('sums', 'maths');
+    users.createUser('user2@stateEditor.com', 'user2StateEditor');
+    users.login('user2@stateEditor.com');
+    workflow.createExploration();
     editor.setContent(function(richTextEditor) {
       richTextEditor.appendBoldText('bold text');
       richTextEditor.appendPlainText(' ');
       richTextEditor.appendItalicText('italic text');
       richTextEditor.appendPlainText(' ');
-      richTextEditor.appendUnderlineText('underline text');
       richTextEditor.appendPlainText(' ');
       richTextEditor.appendOrderedList(['entry 1', 'entry 2']);
       richTextEditor.appendUnorderedList(['an entry', 'another entry']);
@@ -102,10 +103,10 @@ describe('State editor', function() {
   });
 
   it('should obey numeric interaction rules and display feedback', function() {
-    users.createUser('user3@example.com', 'user3');
-    users.login('user3@example.com');
+    users.createUser('user3@stateEditor.com', 'user3StateEditor');
+    users.login('user3@stateEditor.com');
 
-    workflow.createExploration('sums', 'maths');
+    workflow.createExploration();
     editor.setContent(forms.toRichText('some content'));
     editor.setInteraction('NumericInput');
     editor.addResponse('NumericInput', function(richTextEditor) {
@@ -132,5 +133,87 @@ describe('State editor', function() {
     player.expectExplorationToBeOver();
 
     users.logout();
+  });
+
+  it('should skip the customization modal for interactions having no ' +
+      'customization options', function() {
+    users.createUser('user4@stateEditor.com', 'user4StateEditor');
+    users.login('user4@stateEditor.com');
+
+    workflow.createExploration();
+    editor.setContent(forms.toRichText('some content'));
+
+    // Numeric input does not have any customization arguments. Therefore the
+    // customization modal and the save interaction button does not appear.
+    editor.openInteraction('NumericInput');
+    var saveInteractionBtn = element(
+      by.css('.protractor-test-save-interaction'));
+    expect(saveInteractionBtn.isPresent()).toBe(false);
+
+    element(by.css('.protractor-test-close-add-response-modal')).click();
+
+    // The Continue input has customization options. Therefore the
+    // customization modal does appear and so does the save interaction button.
+    editor.openInteraction('Continue');
+    expect(saveInteractionBtn.isPresent()).toBe(true);
+    users.logout();
+  });
+
+  it('should open appropriate modal on re-clicking an interaction to ' +
+     'customize it', function() {
+    users.createUser('user5@stateEditor.com', 'user5StateEditor');
+    users.login('user5@stateEditor.com');
+
+    workflow.createExploration();
+    editor.setContent(forms.toRichText('some content'));
+
+    // Numeric input does not have any customization arguments. Therefore, on
+    // re-clicking, a modal opens up informing the user that this interaction
+    // does not have any customization options. To dismiss this modal, user
+    // clicks 'Okay' implying that he/she has got the message.
+    editor.setInteraction('NumericInput');
+    element(by.css('.protractor-test-interaction')).click();
+    var okayBtn = element(
+      by.css('.protractor-test-close-no-customization-modal'));
+    expect(okayBtn.isPresent()).toBe(true);
+    okayBtn.click();
+
+    // Continue input has customization options. Therefore, on re-clicking, a
+    // modal opens up containing the customization arguments for this input.
+    // The user can dismiss this modal by clicking the 'Save Interaction'
+    // button.
+    editor.setInteraction('Continue');
+    element(by.css('.protractor-test-interaction')).click();
+    var saveInteractionBtn = element(
+      by.css('.protractor-test-save-interaction'));
+    expect(saveInteractionBtn.isPresent()).toBe(true);
+    saveInteractionBtn.click();
+
+    users.logout();
+  });
+
+  it('should preserve input value when rule type changes in' +
+      ' add response modal', function() {
+    users.createUser('stateEditorUser1@example.com', 'stateEditorUser1');
+    users.login('stateEditorUser1@example.com');
+    workflow.createExploration();
+    editor.setContent(forms.toRichText('some content'));
+
+    editor.openInteraction('TextInput');
+    editor.customizeInteraction('TextInput', 'My PlaceHolder', 2);
+    editor.selectRuleInAddResponseModal('TextInput', 'Equals');
+    editor.setRuleParametersInAddResponseModal('TextInput',
+      'Equals', 'Some Text');
+    editor.expectRuleParametersToBe('TextInput', 'Equals', 'Some Text');
+    editor.selectRuleInAddResponseModal('TextInput', 'Contains');
+    editor.expectRuleParametersToBe('TextInput', 'Equals', 'Some Text');
+    editor.closeAddResponseModal();
+
+    editor.saveChanges();
+    users.logout();
+  });
+
+  afterEach(function() {
+    general.checkForConsoleErrors([]);
   });
 });

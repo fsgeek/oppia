@@ -1,3 +1,5 @@
+# coding: utf-8
+#
 # Copyright 2014 The Oppia Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,20 +35,42 @@ SET_OF_STRINGS_SCHEMA = {
     }],
 }
 
+BOOL_SCHEMA = {
+    'type': schema_utils.SCHEMA_TYPE_BOOL
+}
+
+UNICODE_SCHEMA = {
+    'type': schema_utils.SCHEMA_TYPE_UNICODE
+}
+
 
 class ConfigProperty(object):
     """A property with a name and a default value.
 
     NOTE TO DEVELOPERS: These config properties are deprecated. Do not reuse
     these names:
+    - about_page_youtube_video_id
     - admin_email_address
+    - allow_yaml_file_upload
     - banner_alt_text
+    - before_end_body_tag_hook
+    - carousel_slides_config
+    - contact_email_address
     - contribute_gallery_page_announcement
+    - disabled_explorations
     - editor_page_announcement
     - editor_prerequisites_agreement
+    - embedded_google_group_url
     - full_site_url
+    - moderator_request_forum_url
+    - sharing_options
+    - sharing_options_twitter_text
+    - sidebar_menu_additional_links
+    - site_forum_url
+    - social_media_buttons
     - splash_page_exploration_id
     - splash_page_exploration_version
+    - splash_page_youtube_video_id
     """
 
     def refresh_default_value(self, default_value):
@@ -217,3 +241,19 @@ BANNED_USERNAMES = ConfigProperty(
     SET_OF_STRINGS_SCHEMA,
     'Banned usernames (editing permissions for these users have been removed)',
     [])
+
+WHITELISTED_COLLECTION_EDITOR_USERNAMES = ConfigProperty(
+    'collection_editor_whitelist', SET_OF_STRINGS_SCHEMA,
+    'Names of users allowed to use the collection editor',
+    [])
+
+WHITELISTED_EMAIL_SENDERS = ConfigProperty(
+    'whitelisted_email_senders', SET_OF_STRINGS_SCHEMA,
+    'Names of users allowed to send emails via the query interface.', [])
+
+PROMO_BAR_ENABLED = ConfigProperty(
+    'promo_bar_enabled', BOOL_SCHEMA,
+    'Whether the promo bar should be enabled for all users', False)
+PROMO_BAR_MESSAGE = ConfigProperty(
+    'promo_bar_message', UNICODE_SCHEMA,
+    'The message to show to all users if the promo bar is enabled', '')

@@ -15,10 +15,10 @@
 // This directive can only be used in the context of an exploration.
 
 oppia.directive('filepathEditor', [
-  '$compile', '$http', '$sce', 'warningsData', 'explorationContextService',
+  '$compile', '$http', '$sce', 'alertsService', 'explorationContextService',
   'OBJECT_EDITOR_URL_PREFIX',
   function(
-      $compile, $http, $sce, warningsData, explorationContextService,
+      $compile, $http, $sce, alertsService, explorationContextService,
       OBJECT_EDITOR_URL_PREFIX) {
     return {
       link: function(scope, element) {
@@ -30,7 +30,7 @@ oppia.directive('filepathEditor', [
       restrict: 'E',
       scope: true,
       template: '<div ng-include="getTemplateUrl()"></div>',
-      controller: function($scope) {
+      controller: ['$scope', function($scope) {
         // Reset the component each time the value changes (e.g. if this is part
         // of an editable list).
         $scope.$watch('$parent.value', function(newValue) {
@@ -48,7 +48,7 @@ oppia.directive('filepathEditor', [
 
         $scope.$watch('localValue.label', function(newValue) {
           if (newValue) {
-            warningsData.clear();
+            alertsService.clearWarnings();
             $scope.localValue = {
               label: newValue
             };
@@ -86,6 +86,17 @@ oppia.directive('filepathEditor', [
             return;
           }
 
+          var imageNotSupported = (!file.type.match('image.jpeg') &&
+              !file.type.match('image.gif') && !file.type.match('image.jpg') &&
+              !file.type.match('image.png'));
+          
+          if (imageNotSupported) {
+            $scope.uploadWarning = 'This image format is not supported.';
+            $scope.resetImageUploader();
+            $scope.$apply();
+            return;
+          }
+
           $scope.currentFile = file;
           $scope.currentFilename = filename;
           $scope.uploadWarning = null;
@@ -102,19 +113,20 @@ oppia.directive('filepathEditor', [
         };
 
         $scope.saveUploadedFile = function(file, filename) {
-          warningsData.clear();
+          alertsService.clearWarnings();
 
           if (!file || !file.size) {
-            warningsData.addWarning('Empty file detected.');
+            alertsService.addWarning('Empty file detected.');
             return;
           }
           if (!file.type.match('image.*')) {
-            warningsData.addWarning('This file is not recognized as an image.');
+            alertsService.addWarning(
+              'This file is not recognized as an image.');
             return;
           }
 
           if (!filename) {
-            warningsData.addWarning('Filename must not be empty.');
+            alertsService.addWarning('Filename must not be empty.');
             return;
           }
 
@@ -144,11 +156,10 @@ oppia.directive('filepathEditor', [
             $scope.localValue.label = data.filepath;
             $scope.$apply();
           }).fail(function(data) {
-            console.log(data);
             // Remove the XSSI prefix.
             var transformedData = data.responseText.substring(5);
             var parsedResponse = JSON.parse(transformedData);
-            warningsData.addWarning(
+            alertsService.addWarning(
               parsedResponse.error || 'Error communicating with server.');
             $scope.$apply();
           });
@@ -157,11 +168,11 @@ oppia.directive('filepathEditor', [
         $scope.filepathsLoaded = false;
         $http.get(
           '/createhandler/resource_list/' + $scope.explorationId
-        ).success(function(data) {
-          $scope.filepaths = data.filepaths;
+        ).then(function(response) {
+          $scope.filepaths = response.data.filepaths;
           $scope.filepathsLoaded = true;
         });
-      }
+      }]
     };
   }
 ]);

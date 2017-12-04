@@ -14,8 +14,6 @@
 
 /**
  * @fileoverview End-to-end tests of the gadget editor.
- *
- * @author Michael Anuzis (anuzis@google.com)
  */
 
 var general = require('../protractor_utils/general.js');
@@ -28,10 +26,10 @@ var player = require('../protractor_utils/player.js');
 describe('Gadget editor', function() {
   it('should allow adding a gadget that is listed in the editor side panel ' +
        'and visible in the player view.', function() {
-    users.createUser('gadgetuser1@example.com', 'gadgetuser1');
-    users.login('gadgetuser1@example.com');
+    users.createUser('user1@gadgetEditor.com', 'user1GadgetEditor');
+    users.login('user1@gadgetEditor.com');
 
-    workflow.createExploration('sums', 'maths');
+    workflow.createExploration();
 
     editor.enableParameters();
     editor.enableGadgets();
@@ -66,10 +64,10 @@ describe('Gadget editor', function() {
 
   it('should allow configuration of visibility settings, and properly ' +
       'render as visible or invisible as expected per state.', function() {
-    users.createUser('gadgetuser2@example.com', 'gadgetuser2');
-    users.login('gadgetuser2@example.com');
+    users.createUser('user2@gadgetEditor.com', 'user2GadgetEditor');
+    users.login('user2@gadgetEditor.com');
 
-    workflow.createExploration('sums', 'maths');
+    workflow.createExploration();
 
     // Setup the first state.
     editor.setStateName('first');
@@ -124,10 +122,10 @@ describe('Gadget editor', function() {
   // to help authors differentiate between gadgets, and are not visible in the
   // player view.
   it('should allow renaming and deleting gadgets', function() {
-    users.createUser('gadgetuser3@example.com', 'gadgetuser3');
-    users.login('gadgetuser3@example.com');
+    users.createUser('user3@gadgetEditor.com', 'user3GadgetEditor');
+    users.login('user3@gadgetEditor.com');
 
-    workflow.createExploration('sums', 'maths');
+    workflow.createExploration();
 
     // Setup the first state.
     editor.setStateName('first');
@@ -152,5 +150,9 @@ describe('Gadget editor', function() {
 
     editor.deleteGadget('SuperCoconuts');
     editor.expectGadgetWithTypeDoesNotExist('SuperCoconuts');
+  });
+
+  afterEach(function() {
+    general.checkForConsoleErrors([]);
   });
 });

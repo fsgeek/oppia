@@ -35,11 +35,13 @@ dicts, each representing a customization arg -- viz.:
 """
 
 import copy
+import json
 import os
 
 from core.domain import obj_services
-from core.domain import rule_domain
+from core.domain import visualization_registry
 from extensions import domain
+from extensions.objects.models import objects
 import feconf
 import jinja_utils
 import utils
@@ -78,7 +80,7 @@ class BaseInteraction(object):
     is_terminal = False
     # Whether the interaction has only one possible answer.
     is_linear = False
-    # Whether this interaction supports training and fuzzy classification.
+    # Whether this interaction supports training and statistical classification.
     is_trainable = False
     # Whether this interaction supports the string classifier.
     # TODO(chiangs): remove once classifier_services is generalized.
@@ -94,6 +96,12 @@ class BaseInteraction(object):
     # Customization arg specifications for the component, including their
     # descriptions, schemas and default values. Overridden in subclasses.
     _customization_arg_specs = []
+    # Specs for desired visualizations of recorded state answers. Overridden
+    # in subclasses.
+    _answer_visualization_specs = []
+    # Auxiliary calculations supported by this interaction, but not used for
+    # visualization.
+    _auxiliary_calculation_ids = []
     # Instructions for using this interaction, to be shown to the learner. Only
     # relevant for supplemental interactions.
     instructions = None
@@ -107,6 +115,9 @@ class BaseInteraction(object):
     # be None unless the interaction is linear and non-terminal.
     default_outcome_heading = None
 
+    # Temporary cache for the rule definitions.
+    _cached_rules_dict = None
+
     @property
     def id(self):
         return self.__class__.__name__
@@ -118,12 +129,29 @@ class BaseInteraction(object):
             for cas in self._customization_arg_specs]
 
     @property
-    def dependency_ids(self):
-        return copy.deepcopy(self._dependency_ids)
+    def answer_visualization_specs(self):
+        return self._answer_visualization_specs
 
     @property
-    def rules(self):
-        return rule_domain.get_rules_for_obj_type(self.answer_type)
+    def answer_visualizations(self):
+        result = []
+        for spec in self._answer_visualization_specs:
+            factory_cls = (
+                visualization_registry.Registry.get_visualization_class(
+                    spec['id']))
+            result.append(factory_cls(spec['calculation_id'], spec['options']))
+        return result
+
+    @property
+    def answer_calculation_ids(self):
+        visualizations = self.answer_visualizations
+        return set(
+            [visualization.calculation_id for visualization in visualizations]
+            + self._auxiliary_calculation_ids)
+
+    @property
+    def dependency_ids(self):
+        return copy.deepcopy(self._dependency_ids)
 
     def normalize_answer(self, answer):
         """Normalizes a learner's input to this interaction."""
@@ -134,13 +162,23 @@ class BaseInteraction(object):
                 self.answer_type).normalize(answer)
 
     @property
-    def _stats_log_template(self):
-        """The template for reader responses in the stats log."""
-        try:
-            return utils.get_file_contents(os.path.join(
-                feconf.INTERACTIONS_DIR, self.id, 'stats_response.html'))
-        except IOError:
-            return '{{answer}}'
+    def rules_dict(self):
+        """A dict of rule names to rule properties."""
+        if self._cached_rules_dict is not None:
+            return self._cached_rules_dict
+
+        rules_index_dict = json.loads(
+            utils.get_file_contents(feconf.RULES_DESCRIPTIONS_FILE_PATH))
+        self._cached_rules_dict = rules_index_dict[self.id]
+
+        return self._cached_rules_dict
+
+    @property
+    def _rule_description_strings(self):
+        return {
+            rule_name: self.rules_dict[rule_name]['description']
+            for rule_name in self.rules_dict
+        }
 
     @property
     def html_body(self):
@@ -152,11 +190,9 @@ class BaseInteraction(object):
         interaction itself and the other for displaying the learner's response
         in a read-only view after it has been submitted.
         """
-        js_directives = utils.get_file_contents(os.path.join(
-            feconf.INTERACTIONS_DIR, self.id, '%s.js' % self.id))
         html_templates = utils.get_file_contents(os.path.join(
             feconf.INTERACTIONS_DIR, self.id, '%s.html' % self.id))
-        return '<script>%s</script>\n%s' % (js_directives, html_templates)
+        return jinja_utils.interpolate_cache_slug('%s' % html_templates)
 
     @property
     def validator_html(self):
@@ -172,7 +208,7 @@ class BaseInteraction(object):
         """Gets a dict representing this interaction. Only default values are
         provided.
         """
-        result = {
+        return {
             'id': self.id,
             'name': self.name,
             'description': self.description,
@@ -192,37 +228,45 @@ class BaseInteraction(object):
             'instructions': self.instructions,
             'narrow_instructions': self.narrow_instructions,
             'default_outcome_heading': self.default_outcome_heading,
+            'rule_descriptions': self._rule_description_strings,
         }
 
-        # Add information about rule descriptions corresponding to the answer
-        # type for this interaction.
-        result['rule_descriptions'] = (
-            rule_domain.get_description_strings_for_obj_type(
-                self.answer_type))
-
-        return result
-
-    def get_rule_by_name(self, rule_name):
-        """Gets a rule given its name."""
-        try:
-            return next(
-                r for r in self.rules if r.__name__ == rule_name)
-        except StopIteration:
+    def get_rule_description(self, rule_name):
+        """Gets a rule description, given its name."""
+        if rule_name not in self.rules_dict:
             raise Exception('Could not find rule with name %s' % rule_name)
+        else:
+            return self.rules_dict[rule_name]['description']
 
-    def get_stats_log_html(self, state_customization_args, answer):
-        """Gets the HTML for recording a learner's response in the stats log.
+    def get_rule_param_list(self, rule_name):
+        """Gets the parameter list for a given rule."""
+        description = self.get_rule_description(rule_name)
 
-        Returns an HTML string.
-        """
-        customization_args = {
-            ca_spec.name: (
-                state_customization_args[ca_spec.name]['value']
-                if ca_spec.name in state_customization_args
-                else ca_spec.default_value
-            ) for ca_spec in self.customization_arg_specs
-        }
-        customization_args['answer'] = answer
+        param_list = []
+        while description.find('{{') != -1:
+            opening_index = description.find('{{')
+            description = description[opening_index + 2:]
 
-        return jinja_utils.parse_string(
-            self._stats_log_template, customization_args, autoescape=False)
+            bar_index = description.find('|')
+            param_name = description[:bar_index]
+            description = description[bar_index + 1:]
+
+            closing_index = description.find('}}')
+            normalizer_string = description[:closing_index]
+            description = description[closing_index + 2:]
+
+            param_list.append(
+                (param_name, getattr(objects, normalizer_string))
+            )
+
+        return param_list
+
+    def get_rule_param_type(self, rule_name, rule_param_name):
+        """Gets the parameter type for a given rule parameter name."""
+        rule_param_list = self.get_rule_param_list(rule_name)
+
+        for rule_name, rule_type in rule_param_list:
+            if rule_name == rule_param_name:
+                return rule_type
+        raise Exception(
+            'Rule %s has no param called %s' % (rule_name, rule_param_name))

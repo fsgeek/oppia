@@ -18,6 +18,71 @@
 # Bash execution environent set up for all scripts.
 
 
+function maybeInstallDependencies {
+  # Parse additional command line arguments.
+  # Credit: https://stackoverflow.com/questions/192249
+  export SKIP_INSTALLING_THIRD_PARTY_LIBS=$DEFAULT_SKIP_INSTALLING_THIRD_PARTY_LIBS
+  export RUN_MINIFIED_TESTS=$DEFAULT_RUN_MINIFIED_TESTS
+  for i in "$@"; do
+    # Match each space-separated argument passed to the shell file to a separate
+    # case label, based on a pattern. E.g. Match to --skip-install=*, where the
+    # asterisk refers to any characters following the equals sign, other than
+    # whitespace.
+    case $i in
+      --skip-install=*)
+      # Extract the value right of the equal sign by substringing the $i
+      # variable at the equal sign.
+      # http://tldp.org/LDP/abs/html/string-manipulation.html
+      SKIP_INSTALLING_THIRD_PARTY_LIBS="${i#*=}"
+      # Shifts the argument parameters over by one. E.g. $2 becomes $1, etc.
+      shift
+      ;;
+
+      --run-minified-tests=*)
+      RUN_MINIFIED_TESTS="${i#*=}"
+      shift
+      ;;
+
+    esac
+  done
+
+  if [ "$SKIP_INSTALLING_THIRD_PARTY_LIBS" = "false" ]; then
+    # Install third party dependencies
+    # TODO(sll): Make this work with fewer third-party dependencies.
+    bash scripts/install_third_party.sh
+
+    # Ensure that generated JS and CSS files are in place before running the
+    # tests.
+    echo ""
+    echo "  Running build task with concatenation only "
+    echo ""
+
+    $NODE_PATH/bin/node $NODE_MODULE_DIR/gulp/bin/gulp.js build
+
+    install_node_module jasmine-core 2.5.2
+    install_node_module karma 1.5.0
+    install_node_module karma-jasmine 1.1.0
+    install_node_module karma-jasmine-jquery 0.1.1
+    install_node_module karma-json-fixtures-preprocessor 0.0.6
+    install_node_module karma-coverage 1.1.1
+    install_node_module karma-ng-html2js-preprocessor 1.0.0
+    install_node_module karma-chrome-launcher 2.0.0
+    install_node_module protractor 5.1.1
+    install_node_module protractor-screenshot-reporter 0.0.5
+    install_node_module jasmine-spec-reporter 3.2.0
+
+    $NODE_MODULE_DIR/.bin/webdriver-manager update
+  fi
+
+  if [ "$RUN_MINIFIED_TESTS" = "true" ]; then
+    echo ""
+    echo "  Running build task with concatenation and minification"
+    echo ""
+
+    $NODE_PATH/bin/node $NODE_MODULE_DIR/gulp/bin/gulp.js build --minify=True
+  fi
+}
+
 if [ "$SETUP_DONE" ]; then
   echo 'Environment setup completed.'
   return 0
@@ -70,7 +135,7 @@ mkdir -p $THIRD_PARTY_DIR
 mkdir -p $NODE_MODULE_DIR
 
 # Adjust the path to include a reference to node.
-export NODE_PATH=$TOOLS_DIR/node-4.2.1
+export NODE_PATH=$TOOLS_DIR/node-6.9.1
 export PATH=$NODE_PATH/bin:$PATH
 export MACHINE_TYPE=`uname -m`
 export OS=`uname`
@@ -101,19 +166,19 @@ if [ ! -d "$NODE_PATH" ]; then
   echo Installing Node.js
   if [ ${OS} == "Darwin" ]; then
     if [ ${MACHINE_TYPE} == 'x86_64' ]; then
-      NODE_FILE_NAME=node-v4.2.1-darwin-x64
+      NODE_FILE_NAME=node-v6.9.1-darwin-x64
     else
-      NODE_FILE_NAME=node-v4.2.1-darwin-x86
+      NODE_FILE_NAME=node-v6.9.1-darwin-x86
     fi
   elif [ ${OS} == "Linux" ]; then
     if [ ${MACHINE_TYPE} == 'x86_64' ]; then
-      NODE_FILE_NAME=node-v4.2.1-linux-x64
+      NODE_FILE_NAME=node-v6.9.1-linux-x64
     else
-      NODE_FILE_NAME=node-v4.2.1-linux-x86
+      NODE_FILE_NAME=node-v6.9.1-linux-x86
     fi
   fi
 
-  curl --silent http://nodejs.org/dist/v4.2.1/$NODE_FILE_NAME.tar.gz -o node-download.tgz
+  curl -o node-download.tgz https://nodejs.org/dist/v6.9.1/$NODE_FILE_NAME.tar.gz
   tar xzf node-download.tgz --directory $TOOLS_DIR
   mv $TOOLS_DIR/$NODE_FILE_NAME $NODE_PATH
   rm node-download.tgz
@@ -125,11 +190,22 @@ if [ ! -d "$NODE_PATH" ]; then
 fi
 
 # Adjust path to support the default Chrome locations for Unix, Windows and Mac OS.
-if [[ $TRAVIS == 'true' ]]; then
-  export CHROME_BIN="chromium-browser"
+if [ "$TRAVIS" = true ]; then
+  export CHROME_BIN="/usr/bin/chromium-browser"
+elif [ "$VAGRANT" = true ] || [ -f "/etc/is_vagrant_vm" ]; then
+  # XVFB is required for headless testing in Vagrant
+  sudo apt-get install xvfb chromium-browser
+  export CHROME_BIN="/usr/bin/chromium-browser"
+  # Used in frontend and e2e tests. Only gets set if using Vagrant VM.
+  export XVFB_PREFIX="/usr/bin/xvfb-run"
+  # Enforce proper ownership on oppia, oppia_tools, and node_modules or else NPM installs will fail.
+  sudo chown -R vagrant.vagrant /home/vagrant/oppia /home/vagrant/oppia_tools /home/vagrant/node_modules
 elif [ -f "/usr/bin/google-chrome" ]; then
   # Unix.
   export CHROME_BIN="/usr/bin/google-chrome"
+elif [ -f "/usr/bin/chromium-browser" ]; then
+  # Unix.
+  export CHROME_BIN="/usr/bin/chromium-browser"
 elif [ -f "/c/Program Files (x86)/Google/Chrome/Application/chrome.exe" ]; then
   # Windows.
   export CHROME_BIN="/c/Program Files (x86)/Google/Chrome/Application/chrome.exe"
@@ -149,14 +225,14 @@ function test_python_version() {
   else
     echo "Unrecognizable Python command output: ${PYTHON_VERSION}"
     # Return a false condition if output of tested command is unrecognizable.
-    return 0
-  fi
-  if [[ "${PYTHON_VERSION}" = "${EXPECTED_PYTHON_VERSION_PREFIX}*" ]]; then
-    # The value '1' indicates a true return value,
-    # indicating the version of the input Python command is the expected Python version.
     return 1
-  else
+  fi
+  if [[ "${PYTHON_VERSION}" = ${EXPECTED_PYTHON_VERSION_PREFIX}* ]]; then
+    # Return 0 to indicate a successful match.
+    # Return 1 to indicate a failed match.
     return 0
+  else
+    return 1
   fi
 }
 
@@ -176,7 +252,7 @@ if ! test_python_version $PYTHON_CMD; then
         echo "If you have two versions of Python (ie, Python 2.7 and 3), specify 2.7 before other versions of Python when setting the PATH."
         echo "Here are some helpful articles:"
         echo "http://docs.python-guide.org/en/latest/starting/install/win/"
-        echo "http://stackoverflow.com/questions/3701646/how-to-add-to-the-pythonpath-in-windows-7"
+        echo "https://stackoverflow.com/questions/3701646/how-to-add-to-the-pythonpath-in-windows-7"
     fi
     # Exit when no suitable Python environment can be found.
     return 1

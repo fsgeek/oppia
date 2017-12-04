@@ -15,7 +15,6 @@
 /**
  * @fileoverview Unit tests for the editor components of the LogicProof
  * interaction.
- * @author Jacob Davis (jacobdavis11@gmail.com)
  */
 
 describe('Build questions', function() {
@@ -49,7 +48,11 @@ describe('Build questions', function() {
     expect(function() {
       logicProofTeacher.buildQuestion(
         'f(x,y)=z', 'f(x)=z', logicProofData.BASE_VOCABULARY);
-    }).toThrow('f must have 1 arguments.');
+    }).toThrow(
+      {
+        message: 'f must have 1 arguments.'
+      }
+    );
   });
 
   it('should forbid the use of reserved words', function() {
@@ -57,7 +60,11 @@ describe('Build questions', function() {
       logicProofTeacher.buildQuestion('we\u2227you', 'p=q',
         logicProofData.BASE_VOCABULARY);
     }).toThrow(
-      'The name \'we\' is reserved for vocabulary and so cannot be used here.'
+      {
+        message: (
+          'The name \'we\' is reserved for vocabulary and so cannot ' +
+          'be used here.')
+      }
     );
   });
 });

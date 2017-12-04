@@ -24,7 +24,9 @@ oppia.directive('oppiaInteractiveCodeRepl', [
   function(oppiaHtmlEscaper, codeReplRulesService) {
     return {
       restrict: 'E',
-      scope: {},
+      scope: {
+        onSubmit: '&'
+      },
       templateUrl: 'interaction/CodeRepl',
       controller: ['$scope', '$attrs', function($scope, $attrs) {
         $scope.language = oppiaHtmlEscaper.escapedJsonToObj(
@@ -39,12 +41,12 @@ oppia.directive('oppiaInteractiveCodeRepl', [
         // Make sure $scope.preCode ends with a newline:
         if ($scope.preCode.trim().length === 0) {
           $scope.preCode = '';
-        } else if (!$scope.preCode.endsWith('\n')) {
+        } else if (!$scope.preCode.slice(-1) === '\n') {
           $scope.preCode += '\n';
         }
 
         // Make sure $scope.placeholder ends with a newline.
-        if (!$scope.placeholder.endsWith('\n')) {
+        if (!$scope.placeholder.slice(-1) === '\n') {
           $scope.placeholder += '\n';
         }
 
@@ -119,7 +121,13 @@ oppia.directive('oppiaInteractiveCodeRepl', [
           execLimit: 10000
         });
 
-        $scope.runCode = function(codeInput) {
+        $scope.runAndSubmitCode = function(codeInput) {
+          $scope.runCode(codeInput, function(evaluation, err) {
+            $scope.sendResponse(evaluation, err);
+          });
+        };
+
+        $scope.runCode = function(codeInput, onFinishRunCallback) {
           $scope.code = codeInput;
           $scope.output = '';
 
@@ -128,10 +136,20 @@ oppia.directive('oppiaInteractiveCodeRepl', [
             Sk.importMainWithBody('<stdin>', false, codeInput, true);
           }).then(function() {
             // Finished evaluating.
-            $scope.sendResponse('', '');
+            $scope.evaluation = '';
+            $scope.fullError = '';
+
+            if (onFinishRunCallback) {
+              onFinishRunCallback('', '');
+            }
           }, function(err) {
             if (!(err instanceof Sk.builtin.TimeLimitError)) {
-              $scope.sendResponse('', String(err));
+              $scope.evaluation = '';
+              $scope.fullError = String(err);
+
+              if (onFinishRunCallback) {
+                onFinishRunCallback('', String(err));
+              }
             }
           });
         };
@@ -148,7 +166,7 @@ oppia.directive('oppiaInteractiveCodeRepl', [
 
           // Mark pre- and post- code as uneditable, and give it some styling.
           var markOptions = {
-            atomic: true,
+            atomic: false,
             readOnly: true,
             inclusiveLeft: true,
             inclusiveRight: true
@@ -193,16 +211,21 @@ oppia.directive('oppiaInteractiveCodeRepl', [
         };
 
         $scope.sendResponse = function(evaluation, err) {
-          $scope.evaluation = (evaluation || '');
-          $scope.fullError = err || '';
-          $scope.$parent.submitAnswer({
-            // Replace tabs with 2 spaces.
-            // TODO(sll): Change the default Python indentation to 4 spaces.
-            code: $scope.code.replace(/\t/g, '  ') || '',
-            output: $scope.output,
-            evaluation: $scope.evaluation,
-            error: (err || '')
-          }, codeReplRulesService);
+          $scope.onSubmit({
+            answer: {
+              // Replace tabs with 2 spaces.
+              // TODO(sll): Change the default Python indentation to 4 spaces.
+              code: $scope.code.replace(/\t/g, '  ') || '',
+              output: $scope.output,
+              evaluation: $scope.evaluation,
+              error: (err || '')
+            },
+            rulesService: codeReplRulesService
+          });
+
+          // Without this, the error message displayed in the user-facing
+          // console will sometimes not update.
+          $scope.$apply();
         };
       }]
     };
@@ -244,43 +267,49 @@ oppia.directive('oppiaShortResponseCodeRepl', [
 ]);
 
 oppia.factory('codeReplRulesService', [
-    '$filter', 'codeNormalizationService',
-    function($filter, codeNormalizationService) {
-  return {
-    CodeEquals: function(answer, inputs) {
-      var normalizedCode =
-        codeNormalizationService.getNormalizedCode(answer.code);
-      var normalizedExpectedCode =
-        codeNormalizationService.getNormalizedCode(inputs.x);
-      return normalizedCode == normalizedExpectedCode;
-    },
-    CodeContains: function(answer, inputs) {
-      var normalizedCode =
-        codeNormalizationService.getNormalizedCode(answer.code);
-      var normalizedSnippet =
-        codeNormalizationService.getNormalizedCode(inputs.x);
-      return normalizedCode.indexOf(normalizedSnippet) != -1;
-    },
-    CodeDoesNotContain: function(answer, inputs) {
-      var normalizedCode =
-        codeNormalizationService.getNormalizedCode(answer.code);
-      var normalizedSnippet =
-        codeNormalizationService.getNormalizedCode(inputs.x);
-      return normalizedCode.indexOf(normalizedSnippet) == -1;
-    },
-    OutputEquals: function(answer, inputs) {
-      var normalizedOutput = $filter('normalizeWhitespace')(answer.output);
-      var normalizedExpectedOutput =
-        $filter('normalizeWhitespace')(inputs.x);
-      return normalizedOutput == normalizedExpectedOutput;
-    },
-    ResultsInError: function(answer) {
-      return !!(answer.error.trim());
-    },
-    ErrorContains: function(answer, inputs) {
-      var normalizedError = $filter('normalizeWhitespace')(answer.error);
-      var normalizedSnippet = $filter('normalizeWhitespace')(inputs.x);
-      return normalizedError.indexOf(normalizedSnippet) != -1;
-    }
-  };
-}]);
+  '$filter', 'codeNormalizationService',
+  function($filter, codeNormalizationService) {
+    return {
+      CodeEquals: function(answer, inputs) {
+        var normalizedCode =
+          codeNormalizationService.getNormalizedCode(answer.code);
+        var normalizedExpectedCode =
+          codeNormalizationService.getNormalizedCode(inputs.x);
+        return normalizedCode === normalizedExpectedCode;
+      },
+      CodeContains: function(answer, inputs) {
+        var normalizedCode =
+          codeNormalizationService.getNormalizedCode(answer.code);
+        var normalizedSnippet =
+          codeNormalizationService.getNormalizedCode(inputs.x);
+        return normalizedCode.indexOf(normalizedSnippet) !== -1;
+      },
+      CodeDoesNotContain: function(answer, inputs) {
+        var normalizedCode =
+          codeNormalizationService.getNormalizedCode(answer.code);
+        var normalizedSnippet =
+          codeNormalizationService.getNormalizedCode(inputs.x);
+        return normalizedCode.indexOf(normalizedSnippet) === -1;
+      },
+      OutputContains: function(answer, inputs) {
+        var normalizedOutput = $filter('normalizeWhitespace')(answer.output);
+        var normalizedSnippet = $filter('normalizeWhitespace')(inputs.x);
+        return normalizedOutput.indexOf(normalizedSnippet) !== -1;
+      },
+      OutputEquals: function(answer, inputs) {
+        var normalizedOutput = $filter('normalizeWhitespace')(answer.output);
+        var normalizedExpectedOutput =
+          $filter('normalizeWhitespace')(inputs.x);
+        return normalizedOutput === normalizedExpectedOutput;
+      },
+      ResultsInError: function(answer) {
+        return !!(answer.error.trim());
+      },
+      ErrorContains: function(answer, inputs) {
+        var normalizedError = $filter('normalizeWhitespace')(answer.error);
+        var normalizedSnippet = $filter('normalizeWhitespace')(inputs.x);
+        return normalizedError.indexOf(normalizedSnippet) !== -1;
+      }
+    };
+  }
+]);

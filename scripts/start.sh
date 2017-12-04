@@ -35,22 +35,18 @@ then
   echo ""
   echo "     bash $0"
   echo ""
-  return 1
+  exit 1
+fi
+
+if [ -e "/etc/is_vagrant_vm" ]
+then
+  source $(dirname $0)/vagrant_lock.sh || exit 1
 fi
 
 set -e
 source $(dirname $0)/setup.sh || exit 1
 source $(dirname $0)/setup_gae.sh || exit 1
 set -- "${remaining_params[@]}"
-
-echo Checking whether GAE is installed in $GOOGLE_APP_ENGINE_HOME
-if [ ! -f "$GOOGLE_APP_ENGINE_HOME/appcfg.py" ]; then
-  echo "Installing Google App Engine (this may take a little while)..."
-  mkdir -p $GOOGLE_APP_ENGINE_HOME
-  curl --silent https://storage.googleapis.com/appengine-sdks/deprecated/1919/google_appengine_1.9.19.zip -o gae-download.zip
-  unzip -q gae-download.zip -d $TOOLS_DIR/google_appengine_1.9.19/
-  rm gae-download.zip
-fi
 
 # Install third party dependencies.
 bash scripts/install_third_party.sh
@@ -64,6 +60,27 @@ if ( nc -vz localhost 8181 >/dev/null 2>&1 ); then
   echo ""
   exit 1
 fi
+
+# Argument passed to dev_appserver.py to indicate whether or not to
+# clear the datastore.
+CLEAR_DATASTORE_ARG="--clear_datastore=true"
+# Argument passed to gulpfile.js to help build with minification.
+MINIFICATION=false
+for arg in "$@"; do
+  if [ "$arg" == "--save_datastore" ]; then
+    CLEAR_DATASTORE_ARG=""
+  fi
+  # Used to emulate running Oppia in a production environment.
+  if [ "$arg" == "--prod_env" ]; then
+    MINIFICATION=true
+    $PYTHON_CMD scripts/build.py
+  fi
+done
+
+yaml_env_variable="MINIFICATION: $MINIFICATION"
+sed -i.bak -e s/"MINIFICATION: .*"/"$yaml_env_variable"/ app.yaml
+# Delete the modified yaml file(-i.bak)
+rm app.yaml.bak
 
 # Launch a browser window.
 if [ -f "/usr/bin/google-chrome" ]; then
@@ -88,15 +105,6 @@ else
   echo ""
 fi
 
-# Argument passed to dev_appserver.py to indicate whether or not to
-# clear the datastore.
-CLEAR_DATASTORE_ARG="--clear_datastore=true"
-for arg in "$@"; do
-  if [ "$arg" == "--save_datastore" ]; then
-    CLEAR_DATASTORE_ARG=""
-  fi
-done
-
 # Set up a local dev instance.
 # TODO(sll): do this in a new shell.
 echo Starting GAE development server
@@ -104,7 +112,11 @@ echo Starting GAE development server
 # settings in feconf.py. Be careful with this -- you do not want to spam people
 # accidentally!
 
-
-$NODE_PATH/bin/node $NODE_MODULE_DIR/gulp/bin/gulp.js start_devserver --gae_devserver_path=$GOOGLE_APP_ENGINE_HOME/dev_appserver.py --clear_datastore=$CLEAR_DATASTORE_ARG
+if [[ "$MINIFICATION" == "true" ]]; then
+  # This starts up a dev server which uses minified resources.
+  $NODE_PATH/bin/node $NODE_MODULE_DIR/gulp/bin/gulp.js start_devserver --prod_env=True --gae_devserver_path=$GOOGLE_APP_ENGINE_HOME/dev_appserver.py --clear_datastore=$CLEAR_DATASTORE_ARG
+else
+  $NODE_PATH/bin/node $NODE_MODULE_DIR/gulp/bin/gulp.js start_devserver --gae_devserver_path=$GOOGLE_APP_ENGINE_HOME/dev_appserver.py --clear_datastore=$CLEAR_DATASTORE_ARG
+fi
 
 echo Done!

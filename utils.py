@@ -17,6 +17,7 @@
 import base64
 import datetime
 import hashlib
+import imghdr
 import json
 import os
 import random
@@ -227,14 +228,19 @@ def get_random_choice(alist):
     return alist[index]
 
 
-def convert_png_to_data_url(filepath):
-    """Converts the png file at filepath to a data URL.
+def convert_png_binary_to_data_url(content):
+    """Converts a png image string (represented by 'content') to a data URL."""
+    if imghdr.what(None, content) == 'png':
+        return 'data:image/png;base64,%s' % urllib.quote(
+            content.encode('base64'))
+    else:
+        raise Exception('The given string does not represent a PNG image.')
 
-    This method is currently used only in tests for RTE extensions.
-    """
+
+def convert_png_to_data_url(filepath):
+    """Converts the png file at filepath to a data URL."""
     file_contents = get_file_contents(filepath, raw_bytes=True, mode='rb')
-    return 'data:image/png;base64,%s' % urllib.quote(
-        file_contents.encode('base64'))
+    return convert_png_binary_to_data_url(file_contents)
 
 
 def camelcase_to_hyphenated(camelcase_str):
@@ -281,7 +287,7 @@ def convert_to_hash(input_string, max_length):
             (input_string, type(input_string)))
 
     encoded_string = base64.urlsafe_b64encode(
-        hashlib.sha1(input_string).digest())
+        hashlib.sha1(input_string.encode('utf-8')).digest())
 
     return encoded_string[:max_length]
 
@@ -310,6 +316,14 @@ def get_human_readable_time_string(time_msec):
     time string for the admin dashboard.
     """
     return time.strftime('%B %d %H:%M:%S', time.gmtime(time_msec / 1000.0))
+
+
+def are_datetimes_close(later_datetime, earlier_datetime):
+    """Given two datetimes, determines whether they are separated by less than
+    feconf.PROXIMAL_TIMEDELTA_SECS seconds.
+    """
+    difference_in_secs = (later_datetime - earlier_datetime).total_seconds()
+    return difference_in_secs < feconf.PROXIMAL_TIMEDELTA_SECS
 
 
 def generate_random_string(length):
@@ -363,14 +377,21 @@ def vfs_normpath(path):
     return path or dot
 
 
-def require_valid_name(name, name_type):
+def require_valid_name(name, name_type, allow_empty=False):
     """Generic name validation.
 
     Args:
       name: the name to validate.
       name_type: a human-readable string, like 'the exploration title' or
         'a state name'. This will be shown in error messages.
+      allow_empty: if True, empty strings are allowed.
     """
+    if not isinstance(name, basestring):
+        raise ValidationError('%s must be a string.' % name_type)
+
+    if allow_empty and name == '':
+        return
+
     # This check is needed because state names are used in URLs and as ids
     # for statistics, so the name length should be bounded above.
     if len(name) > 50 or len(name) < 1:
@@ -404,29 +425,20 @@ def capitalize_string(input_string):
         return input_string
 
 
-def get_info_card_url_for_category(category):
-    info_card_color = (
-        feconf.CATEGORIES_TO_COLORS[category] if
-        category in feconf.CATEGORIES_TO_COLORS else feconf.DEFAULT_COLOR)
-    return (
-        '/images/gallery/exploration_background_%s_large.png' %
-        info_card_color)
-
-
 def get_hex_color_for_category(category):
-    color = (
+    return (
         feconf.CATEGORIES_TO_COLORS[category]
         if category in feconf.CATEGORIES_TO_COLORS
         else feconf.DEFAULT_COLOR)
-    return feconf.COLORS_TO_HEX_VALUES[color]
 
 
 def get_thumbnail_icon_url_for_category(category):
     icon_name = (
-        category if category in feconf.DEFAULT_CATEGORIES
+        category if category in feconf.ALL_CATEGORIES
         else feconf.DEFAULT_THUMBNAIL_ICON)
     # Remove all spaces from the string.
-    return '/images/gallery/thumbnails/%s.svg' % icon_name.replace(' ', '')
+    return ('%s/assets/images/subjects/%s.svg'
+            % (get_asset_dir_prefix(), icon_name.replace(' ', '')))
 
 
 def _get_short_language_description(full_language_description):
@@ -445,3 +457,44 @@ def get_all_language_codes_and_names():
         'code': lc['code'],
         'name': _get_short_language_description(lc['description']),
     } for lc in feconf.ALL_LANGUAGE_CODES]
+
+
+def unescape_encoded_uri_component(escaped_string):
+    """Unescape a string that is encoded with encodeURIComponent."""
+    return urllib.unquote(escaped_string).decode('utf-8')
+
+
+_CACHE_SLUG = None
+def get_cache_slug():
+    """Returns cache slug depending whether dev or prod."""
+    global _CACHE_SLUG # pylint: disable=global-statement
+    if not _CACHE_SLUG:
+        _CACHE_SLUG = ''
+        if feconf.IS_MINIFIED or not feconf.DEV_MODE:
+            yaml_file_content = dict_from_yaml(
+                get_file_contents('cache_slug.yaml'))
+            _CACHE_SLUG = yaml_file_content['cache_slug']
+
+    return _CACHE_SLUG
+
+
+def get_asset_dir_prefix():
+    """Returns prefix for asset directory depending whether dev or prod.
+    It is used as a prefix in urls for images, css and script files.
+    """
+    asset_dir_prefix = ''
+    if feconf.IS_MINIFIED or not feconf.DEV_MODE:
+        cache_slug = get_cache_slug()
+        asset_dir_prefix = '/build/%s' % cache_slug
+
+    return asset_dir_prefix
+
+
+def get_template_dir_prefix():
+    """Returns prefix for template directory depending whether dev or prod.
+    It is used as a prefix in urls for js script files under the templates
+    directory.
+    """
+    template_path = ('/templates/head' if feconf.IS_MINIFIED
+                     or not feconf.DEV_MODE else '/templates/dev/head')
+    return '%s%s' % (get_asset_dir_prefix(), template_path)

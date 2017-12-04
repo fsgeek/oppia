@@ -14,7 +14,6 @@
 
 /**
  * @fileoverview Components used by the LogicProof interaction editor.
- * @author Jacob Davis (jacobdavis11@gmail.com)
  */
 
 var logicProofTeacher = (function() {
@@ -197,7 +196,8 @@ var logicProofTeacher = (function() {
         content: ' has already been defined.'
       }]],
       parameters: {
-        function: {
+        // eslint-disable-next-line quote-props
+        'function': {
           format: 'string'
         }
       }
